@@ -13,6 +13,11 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        display: ['"Playfair Display"', 'serif'],
+        body: ['"DM Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -56,6 +61,22 @@ export default {
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
+        },
+        emerald: {
+          glow: "hsl(var(--emerald-glow))",
+        },
+        warm: {
+          gold: "hsl(var(--warm-gold))",
+        },
+        soft: {
+          rose: "hsl(var(--soft-rose))",
+        },
+        deep: {
+          ink: "hsl(var(--deep-ink))",
+        },
+        tag: {
+          bg: "hsl(var(--tag-bg))",
+          text: "hsl(var(--tag-text))",
         },
       },
       borderRadius: {
