@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Bookmark, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, Bookmark, ChevronRight, Loader2, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { AIWordData } from "@/pages/SearchPage";
 import AddToCorpusDialog from "@/components/AddToCorpusDialog";
 import WordFormSection from "@/components/WordFormSection";
+import { useSpeech } from "@/hooks/useSpeech";
 
 export default function WordDetailPage() {
   const { word: wordKey } = useParams<{ word: string }>();
@@ -16,6 +17,7 @@ export default function WordDetailPage() {
   const [wordData, setWordData] = useState<AIWordData | null>(null);
   const [vocabId, setVocabId] = useState<string | null>(null);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
+  const { speaking, speak } = useSpeech();
 
   useEffect(() => {
     if (!wordKey) return;
@@ -82,7 +84,7 @@ export default function WordDetailPage() {
     <div className="max-w-2xl mx-auto px-4 py-6 pb-24">
       <motion.div variants={container} initial="hidden" animate="show">
         {/* Nav bar */}
-        <motion.div variants={item} className="flex items-center justify-between mb-6">
+        <motion.div variants={item} className="flex items-center justify-between mb-8">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm transition-colors">
             <ArrowLeft className="h-4 w-4" /> 返回
           </button>
@@ -91,26 +93,71 @@ export default function WordDetailPage() {
           </button>
         </motion.div>
 
-        {/* Core definition header */}
-        <motion.div variants={item} className="mb-6">
-          <div className="flex items-end gap-3 mb-1">
-            <h1 className="text-4xl font-display font-bold text-foreground">{wordData.word}</h1>
-            <span className="text-sm font-mono text-muted-foreground mb-1">{wordData.phonetic}</span>
+        {/* ===== Dictionary-style Header ===== */}
+        <motion.div variants={item} className="bg-card rounded-2xl shadow-warm p-6 mb-4">
+          {/* Word */}
+          <h1 className="text-4xl font-display font-bold text-foreground tracking-tight">{wordData.word}</h1>
+
+          {/* Phonetics with TTS */}
+          <div className="flex items-center gap-4 mt-3">
+            <button
+              onClick={() => speak(wordData.word, "en-GB")}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors group"
+            >
+              <span className="font-mono">英</span>
+              <span className="font-mono text-foreground">{wordData.phonetic || `/${wordData.word}/`}</span>
+              <Volume2 className={`h-4 w-4 transition-all ${speaking ? "text-primary scale-110" : "group-hover:text-primary"}`} />
+            </button>
+            <button
+              onClick={() => speak(wordData.word, "en-US")}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors group"
+            >
+              <span className="font-mono">美</span>
+              <span className="font-mono text-foreground">{wordData.phonetic || `/${wordData.word}/`}</span>
+              <Volume2 className={`h-4 w-4 transition-all ${speaking ? "text-primary scale-110" : "group-hover:text-primary"}`} />
+            </button>
           </div>
+
+          {/* Core Chinese definition – prominent */}
           {wordData.coreDefinition && (
-            <p className="text-lg text-primary font-semibold mt-2">{wordData.coreDefinition}</p>
+            <p className="mt-4 text-xl font-bold text-foreground leading-snug">
+              {wordData.coreDefinition}
+            </p>
           )}
-          <div className="flex gap-2 mt-3">
-            {wordData.suggestedTags?.map(tag => <span key={tag} className="tag-chip">{tag}</span>)}
+
+          {/* POS definitions summary */}
+          {wordData.definitions && wordData.definitions.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {wordData.definitions.map((def, i) => (
+                <p key={i} className="text-sm text-muted-foreground">
+                  <span className="font-mono text-primary font-medium mr-1.5">{def.pos}</span>
+                  {def.meaningCn}
+                </p>
+              ))}
+            </div>
+          )}
+        </motion.div>
+
+        {/* ===== Network definitions / Keyword tags ===== */}
+        <motion.div variants={item} className="bg-card rounded-2xl shadow-warm p-5 mb-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">网络释义 · 关键词</h3>
+          <div className="flex flex-wrap gap-2">
+            {wordData.suggestedTags?.map(tag => (
+              <span key={tag} className="tag-chip">{tag}</span>
+            ))}
             {wordData.difficulty && (
               <span className={`tag-chip ${wordData.difficulty === "高级" ? "!bg-accent/15 !text-accent" : ""}`}>
                 {wordData.difficulty}
               </span>
             )}
+            {/* Also show definitions as keyword chips */}
+            {wordData.definitions?.map((def, i) => (
+              <span key={`def-${i}`} className="tag-chip">{def.meaningCn}</span>
+            ))}
           </div>
         </motion.div>
 
-        {/* Tabs */}
+        {/* ===== Tabs ===== */}
         <motion.div variants={item}>
           <Tabs defaultValue="forms" className="w-full">
             <TabsList className="w-full bg-muted/50 p-1 rounded-xl mb-4">
@@ -120,7 +167,7 @@ export default function WordDetailPage() {
               <TabsTrigger value="related" className="flex-1 rounded-lg text-xs">延展</TabsTrigger>
             </TabsList>
 
-            {/* Word Forms - collapsible panels */}
+            {/* Word Forms */}
             <TabsContent value="forms">
               {wordData.wordForms && wordData.wordForms.length > 0 ? (
                 <div className="space-y-3">
@@ -129,13 +176,12 @@ export default function WordDetailPage() {
                   ))}
                 </div>
               ) : (
-                /* Fallback to old definitions */
                 <div className="space-y-3">
                   {wordData.definitions?.map((def, i) => (
                     <div key={i} className="bg-card rounded-xl p-4 shadow-warm">
                       <span className="text-xs font-mono text-primary font-medium">{def.pos}</span>
-                      <p className="text-sm text-foreground mt-1">{def.meaning}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{def.meaningCn}</p>
+                      <p className="text-sm text-foreground mt-1 font-medium">{def.meaningCn}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{def.meaning}</p>
                     </div>
                   ))}
                 </div>
@@ -145,10 +191,10 @@ export default function WordDetailPage() {
             <TabsContent value="examples">
               <div className="space-y-3">
                 {wordData.examples?.map((ex, i) => (
-                  <div key={i} className="bg-card rounded-xl p-4 shadow-warm">
+                  <div key={i} className="bg-card rounded-xl p-5 shadow-warm">
                     <span className="tag-chip mb-2">{ex.context}</span>
-                    <p className="text-sm text-foreground mt-2 leading-relaxed">{ex.sentence}</p>
-                    <p className="text-xs text-muted-foreground mt-2">{ex.translation}</p>
+                    <p className="text-sm text-foreground mt-3 leading-relaxed font-medium">{ex.sentence}</p>
+                    <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{ex.translation}</p>
                   </div>
                 ))}
               </div>
@@ -185,7 +231,7 @@ export default function WordDetailPage() {
               <div className="space-y-3">
                 {wordData.relatedWords?.map((group, i) => (
                   <div key={i} className="bg-card rounded-xl p-4 shadow-warm">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">{group.type}</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-3">{group.type}</p>
                     <div className="flex flex-wrap gap-2">
                       {group.words.map(w => (
                         <button
