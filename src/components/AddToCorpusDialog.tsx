@@ -11,12 +11,16 @@ type AppScenario = Database["public"]["Enums"]["app_scenario"];
 const scenarios: AppScenario[] = ["学术写作", "翻译练习", "日常口语", "专业课笔记"];
 const difficulties = ["基础", "进阶", "高级"];
 
-// Preset tag categories with color assignments
 const TAG_CATEGORIES = [
   {
     label: "应用场景",
     color: "emerald" as const,
-    tags: ["演讲汇报", "学术论文", "日常社交", "三创赛路演", "外教Office Hour"],
+    tags: ["学术写作", "翻译练习", "日常口语", "专业课笔记", "演讲汇报", "三创赛路演", "外教Office Hour"],
+  },
+  {
+    label: "来源",
+    color: "amber" as const,
+    tags: ["纽约时报", "专八真题", "BBC新闻", "学术论文", "课堂笔记", "英美剧集"],
   },
   {
     label: "情感色彩",
@@ -42,6 +46,7 @@ const TAG_CATEGORIES = [
 
 const TAG_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
   emerald: { bg: "bg-[hsl(160,30%,92%)] dark:bg-[hsl(160,30%,18%)]", text: "text-[hsl(160,45%,28%)] dark:text-[hsl(160,40%,70%)]", ring: "ring-[hsl(160,45%,32%/0.3)]" },
+  amber:   { bg: "bg-[hsl(30,50%,92%)] dark:bg-[hsl(30,40%,18%)]",   text: "text-[hsl(30,60%,32%)] dark:text-[hsl(30,55%,65%)]",   ring: "ring-[hsl(30,60%,45%/0.3)]" },
   rose:    { bg: "bg-[hsl(350,40%,93%)] dark:bg-[hsl(350,30%,18%)]", text: "text-[hsl(350,50%,40%)] dark:text-[hsl(350,45%,70%)]", ring: "ring-[hsl(350,50%,50%/0.3)]" },
   gold:    { bg: "bg-[hsl(38,50%,92%)] dark:bg-[hsl(38,40%,18%)]",   text: "text-[hsl(38,60%,35%)] dark:text-[hsl(38,60%,65%)]",   ring: "ring-[hsl(38,70%,50%/0.3)]" },
   blue:    { bg: "bg-[hsl(210,50%,93%)] dark:bg-[hsl(210,30%,18%)]", text: "text-[hsl(210,55%,38%)] dark:text-[hsl(210,50%,68%)]", ring: "ring-[hsl(210,55%,50%/0.3)]" },
@@ -49,13 +54,11 @@ const TAG_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
   default: { bg: "bg-[hsl(var(--tag-bg))]", text: "text-[hsl(var(--tag-text))]", ring: "ring-[hsl(var(--primary)/0.2)]" },
 };
 
-// Saved custom tags history key
 const CUSTOM_TAGS_KEY = "corpus_custom_tags_history";
 
 function loadCustomTagHistory(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(CUSTOM_TAGS_KEY) || "[]");
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(CUSTOM_TAGS_KEY) || "[]"); }
+  catch { return []; }
 }
 
 function saveCustomTagHistory(tags: string[]) {
@@ -69,6 +72,14 @@ function getTagColor(tag: string): string {
   return "default";
 }
 
+// Derive scenario from tags
+function deriveScenario(tags: string[]): AppScenario {
+  for (const t of tags) {
+    if (scenarios.includes(t as AppScenario)) return t as AppScenario;
+  }
+  return "学术写作";
+}
+
 interface Props {
   wordData: AIWordData;
   vocabId: string;
@@ -76,8 +87,6 @@ interface Props {
 }
 
 export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props) {
-  const [scenario, setScenario] = useState<AppScenario>("学术写作");
-  const [source, setSource] = useState("");
   const [notes, setNotes] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(wordData.suggestedTags || []);
@@ -145,18 +154,22 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
         return;
       }
 
+      const derivedScenario = deriveScenario(tags);
+      // Extract source tags for source_text field
+      const sourceTags = TAG_CATEGORIES.find(c => c.label === "来源")?.tags || [];
+      const sourceFromTags = tags.filter(t => sourceTags.includes(t)).join("、");
+
       const { error } = await supabase.from("corpus_entries").insert({
         user_id: user.id,
         word_id: vocabId,
-        application_scenario: scenario,
-        source_text: source.slice(0, 500),
+        application_scenario: derivedScenario,
+        source_text: sourceFromTags.slice(0, 500),
         personal_notes: notes.slice(0, 2000),
         custom_tags: tags.slice(0, 20),
         difficulty_level: difficulty,
       });
 
       if (error) throw error;
-      console.log("Corpus entry saved:", { word: wordData.word, tags, scenario, difficulty });
       toast.success(`"${wordData.word}" 已加入语料库！`);
       onClose();
     } catch (e: any) {
@@ -176,51 +189,14 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
         className="bg-card rounded-2xl shadow-warm-lg border w-full max-w-md max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-display font-semibold text-foreground">加入语料库 · {wordData.word}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="p-4 space-y-5">
-          {/* Scenario */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">应用场景</label>
-            <select
-              value={scenario}
-              onChange={(e) => setScenario(e.target.value as AppScenario)}
-              className="w-full bg-muted rounded-lg px-3 py-2.5 text-sm text-foreground outline-none border focus:ring-2 focus:ring-primary/20"
-            >
-              {scenarios.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-
-          {/* Source */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">来源</label>
-            <input
-              type="text"
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              placeholder="如：纽约时报、专八真题、XX教授口头禅..."
-              maxLength={500}
-              className="w-full bg-muted rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none border focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">个人笔记</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="记录你的学习心得..."
-              maxLength={2000}
-              rows={3}
-              className="w-full bg-muted rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none border focus:ring-2 focus:ring-primary/20 resize-none"
-            />
-          </div>
-
-          {/* ===== Enhanced Tag System ===== */}
+        <div className="p-4 space-y-4">
+          {/* ===== Tag Cloud ===== */}
           <div>
             <div className="flex items-center gap-1.5 mb-2">
               <Palette className="h-4 w-4 text-primary" />
@@ -228,7 +204,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
               <span className="text-xs text-muted-foreground ml-auto">{tags.length}/20</span>
             </div>
 
-            {/* Active tags with color coding */}
+            {/* Active tags */}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {tags.map(tag => {
@@ -238,7 +214,6 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                       key={tag}
                       initial={{ scale: 0.8, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.8, opacity: 0 }}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ${color.bg} ${color.text} ${color.ring}`}
                     >
                       #{tag}
@@ -258,9 +233,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                   value={tagInput}
                   onChange={(e) => { setTagInput(e.target.value); setShowSuggestions(true); }}
                   onFocus={() => setShowSuggestions(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); addTag(); }
-                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
                   placeholder="#自定义标签..."
                   maxLength={50}
                   className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none border focus:ring-2 focus:ring-primary/20"
@@ -269,8 +242,6 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                   <Plus className="h-4 w-4" />
                 </button>
               </div>
-
-              {/* Autocomplete dropdown */}
               <AnimatePresence>
                 {showSuggestions && suggestions.length > 0 && (
                   <motion.div
@@ -283,11 +254,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                     {suggestions.map(s => {
                       const color = TAG_COLORS[getTagColor(s)];
                       return (
-                        <button
-                          key={s}
-                          onClick={() => addTag(s)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted/70 transition-colors flex items-center gap-2"
-                        >
+                        <button key={s} onClick={() => addTag(s)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/70 transition-colors flex items-center gap-2">
                           <span className={`w-2 h-2 rounded-full ${color.bg} ring-1 ${color.ring}`} />
                           <span className="text-foreground">{s}</span>
                         </button>
@@ -298,11 +265,12 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
               </AnimatePresence>
             </div>
 
-            {/* Preset tag categories - collapsible */}
-            <div className="space-y-1.5">
+            {/* Collapsible preset categories */}
+            <div className="space-y-1">
               {TAG_CATEGORIES.map(cat => {
                 const isExpanded = expandedCategory === cat.label;
                 const color = TAG_COLORS[cat.color];
+                const selectedCount = cat.tags.filter(t => tags.includes(t)).length;
                 return (
                   <div key={cat.label}>
                     <button
@@ -311,6 +279,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                     >
                       <span className={`w-2 h-2 rounded-full ${color.bg} ring-1 ${color.ring}`} />
                       {cat.label}
+                      {selectedCount > 0 && <span className={`text-[10px] ${color.text}`}>({selectedCount})</span>}
                       <span className="ml-auto text-[10px] opacity-60">{isExpanded ? "收起" : "展开"}</span>
                     </button>
                     <AnimatePresence>
@@ -330,7 +299,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                                   onClick={() => togglePresetTag(tag)}
                                   className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ring-1 ${
                                     selected
-                                      ? `${color.bg} ${color.text} ${color.ring} opacity-100`
+                                      ? `${color.bg} ${color.text} ${color.ring}`
                                       : `bg-muted/50 text-muted-foreground ring-transparent hover:ring-border`
                                   }`}
                                 >
@@ -363,8 +332,22 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
               ))}
             </div>
           </div>
+
+          {/* Notes - moved to bottom */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">个人笔记</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="记录你的学习心得..."
+              maxLength={2000}
+              rows={2}
+              className="w-full bg-muted rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none border focus:ring-2 focus:ring-primary/20 resize-none"
+            />
+          </div>
         </div>
 
+        {/* Save button */}
         <div className="p-4 border-t">
           <button
             onClick={handleSave}
