@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Volume2, Bookmark, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp } from "lucide-react";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
 import type { AIWordData } from "@/pages/SearchPage";
 import AddToCorpusDialog from "@/components/AddToCorpusDialog";
@@ -9,9 +10,10 @@ interface Props {
   vocabId: string | null;
   onClose: () => void;
   onViewDetail: () => void;
+  onSearchWord?: (word: string) => void;
 }
 
-export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail }: Props) {
+export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail, onSearchWord }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
 
@@ -64,7 +66,14 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
         {/* CTA button */}
         <div className="px-5 pb-4">
           <button
-            onClick={() => setShowCorpusDialog(true)}
+            onClick={() => {
+              console.log("[Corpus] vocabId:", vocabId, "wordData:", wordData.word);
+              if (!vocabId) {
+                toast.error("词汇数据尚未就绪，请稍后再试");
+                return;
+              }
+              setShowCorpusDialog(true);
+            }}
             className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
           >
             <Bookmark className="h-4 w-4" />
@@ -118,7 +127,11 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
                       <tbody>
                         {wordData.synonymComparison.map((s, i) => (
                           <tr key={i} className="border-b border-border last:border-0">
-                            <td className="p-2 font-medium text-primary">{s.word}</td>
+                            <td className="p-2 font-medium">
+                              <button onClick={() => onSearchWord?.(s.word)} className="text-primary underline decoration-primary/30 hover:decoration-primary transition-colors">
+                                {s.word}
+                              </button>
+                            </td>
                             <td className="p-2 text-foreground">{s.nuance}</td>
                             <td className="p-2 text-muted-foreground">{s.exampleDiff}</td>
                           </tr>
@@ -129,13 +142,19 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
                 </div>
               )}
 
-              {/* Related words */}
+              {/* Related words – clickable */}
               {wordData.relatedWords?.map((group, i) => (
                 <div key={i}>
                   <h4 className="text-xs font-medium text-muted-foreground mb-1">{group.type}</h4>
                   <div className="flex flex-wrap gap-1.5">
                     {group.words.map(w => (
-                      <span key={w} className="px-2.5 py-1 rounded-lg text-xs bg-muted text-foreground">{w}</span>
+                      <button
+                        key={w}
+                        onClick={() => onSearchWord?.(w)}
+                        className="px-2.5 py-1 rounded-lg text-xs bg-muted text-primary underline decoration-primary/30 hover:bg-primary/10 hover:decoration-primary transition-colors cursor-pointer"
+                      >
+                        {w}
+                      </button>
                     ))}
                   </div>
                 </div>
