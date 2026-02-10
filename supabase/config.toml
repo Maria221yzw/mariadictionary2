@@ -1,1 +1,4 @@
 project_id = "tpewdvwddtlfpczusxml"
+
+[functions.word-expand]
+verify_jwt = false
