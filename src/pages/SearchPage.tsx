@@ -163,6 +163,7 @@ export default function SearchPage() {
               vocabId={vocabId}
               onClose={() => setWordData(null)}
               onViewDetail={() => navigate(`/word/${encodeURIComponent(wordData.word.toLowerCase())}`)}
+              onSearchWord={(w) => { setQuery(w); setWordData(null); handleSearch(w); }}
             />
           )}
         </AnimatePresence>
