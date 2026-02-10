@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Bookmark, ChevronDown, ChevronUp } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import type { AIWordData } from "@/pages/SearchPage";
 import AddToCorpusDialog from "@/components/AddToCorpusDialog";
+import { useSpeech } from "@/hooks/useSpeech";
 
 interface Props {
   wordData: AIWordData;
@@ -16,6 +17,7 @@ interface Props {
 export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail, onSearchWord }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
+  const { speaking, speak } = useSpeech();
 
   return (
     <>
@@ -29,42 +31,56 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
         {/* Header */}
         <div className="p-5 pb-3">
           <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-end gap-2">
-                <h3 className="text-2xl font-display font-bold text-foreground">{wordData.word}</h3>
-                <span className="text-sm font-mono text-muted-foreground mb-0.5">{wordData.phonetic}</span>
-              </div>
-              <div className="flex gap-1.5 mt-2">
-                {wordData.partOfSpeech?.map(p => (
-                  <span key={p} className="text-xs font-mono text-primary font-medium">{p}</span>
-                ))}
-                {wordData.difficulty && (
-                  <span className={`tag-chip text-[10px] ${wordData.difficulty === "高级" ? "!bg-accent/15 !text-accent" : ""}`}>
-                    {wordData.difficulty}
-                  </span>
-                )}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-2xl font-display font-bold text-foreground">{wordData.word}</h3>
+              {/* Phonetics with TTS */}
+              <div className="flex items-center gap-3 mt-1.5">
+                <button
+                  onClick={() => speak(wordData.word, "en-GB")}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors group"
+                >
+                  <span className="font-mono">英</span>
+                  <span className="font-mono text-foreground">{wordData.phonetic}</span>
+                  <Volume2 className={`h-3.5 w-3.5 transition-all ${speaking ? "text-primary scale-110" : "group-hover:text-primary"}`} />
+                </button>
+                <button
+                  onClick={() => speak(wordData.word, "en-US")}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors group"
+                >
+                  <span className="font-mono">美</span>
+                  <span className="font-mono text-foreground">{wordData.phonetic}</span>
+                  <Volume2 className={`h-3.5 w-3.5 transition-all ${speaking ? "text-primary scale-110" : "group-hover:text-primary"}`} />
+                </button>
               </div>
             </div>
             <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm">✕</button>
           </div>
 
-          {/* Core definition */}
+          {/* Core definition – prominent */}
           {wordData.coreDefinition && (
-            <p className="mt-2 text-base font-semibold text-primary">{wordData.coreDefinition}</p>
+            <p className="mt-3 text-lg font-bold text-foreground">{wordData.coreDefinition}</p>
           )}
 
-          {/* Definitions by pos */}
+          {/* POS definitions */}
           <div className="mt-2 space-y-1">
-            {wordData.definitions?.slice(0, 2).map((def, i) => (
-              <p key={i} className="text-sm text-foreground">
-                <span className="text-muted-foreground">{def.pos}</span> {def.meaningCn}
+            {wordData.definitions?.slice(0, 3).map((def, i) => (
+              <p key={i} className="text-sm text-muted-foreground">
+                <span className="font-mono text-primary font-medium mr-1">{def.pos}</span>
+                {def.meaningCn}
               </p>
             ))}
           </div>
+
+          {/* Tags */}
+          {wordData.suggestedTags && wordData.suggestedTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {wordData.suggestedTags.map(tag => <span key={tag} className="tag-chip text-[10px]">{tag}</span>)}
+            </div>
+          )}
         </div>
 
-        {/* CTA button */}
-        <div className="px-5 pb-4">
+        {/* CTA buttons */}
+        <div className="px-5 pb-4 flex gap-2">
           <button
             onClick={() => {
               console.log("[Corpus] vocabId:", vocabId, "wordData:", wordData.word);
@@ -74,10 +90,16 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
               }
               setShowCorpusDialog(true);
             }}
-            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
           >
             <Bookmark className="h-4 w-4" />
-            加入我的语料库
+            加入语料库
+          </button>
+          <button
+            onClick={onViewDetail}
+            className="px-4 py-2.5 rounded-xl border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            详情 →
           </button>
         </div>
 
@@ -104,7 +126,7 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
                   {wordData.examples?.map((ex, i) => (
                     <div key={i} className="bg-muted/50 rounded-lg p-3">
                       <span className="tag-chip text-[10px] mb-1">{ex.context}</span>
-                      <p className="text-sm text-foreground mt-1">{ex.sentence}</p>
+                      <p className="text-sm text-foreground mt-1 font-medium">{ex.sentence}</p>
                       <p className="text-xs text-muted-foreground mt-1">{ex.translation}</p>
                     </div>
                   ))}
