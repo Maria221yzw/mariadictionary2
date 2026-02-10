@@ -23,10 +23,25 @@ serve(async (req) => {
     const systemPrompt = `你是一位专业的英语语言学家和词典编纂者。用户会给你一个英文单词，请你返回以下 JSON 结构（所有解释性文字用中文，例句保持英文并配中文翻译）：
 
 {
-  "word": "单词",
+  "word": "单词原形",
   "phonetic": "音标",
+  "coreDefinition": "该词最核心、最常用的中文释义（简洁精准，10字以内）",
   "partOfSpeech": ["词性数组"],
   "definitions": [{"pos": "词性", "meaning": "英文释义", "meaningCn": "中文释义"}],
+  "wordForms": [
+    {
+      "word": "该词形（如 succeed）",
+      "pos": "词性（如 v.）",
+      "phonetic": "该词形的音标",
+      "meaningCn": "该词性下的中文释义",
+      "morphologies": [
+        {"type": "past tense", "typeCn": "过去式", "form": "succeeded"},
+        {"type": "present participle", "typeCn": "现在分词", "form": "succeeding"},
+        {"type": "third person singular", "typeCn": "第三人称单数", "form": "succeeds"}
+      ],
+      "example": {"sentence": "英文例句", "translation": "中文翻译"}
+    }
+  ],
   "examples": [
     {"context": "正式文书风格", "sentence": "英文例句", "translation": "中文翻译"},
     {"context": "口语交流风格", "sentence": "英文例句", "translation": "中文翻译"},
@@ -46,10 +61,14 @@ serve(async (req) => {
 }
 
 重要规则：
-1. 例句必须地道、自然，分别体现正式文书、口语交流、学术论文三种风格
-2. 近义词辨析必须具体说明语境细微差别（Nuance），不要笼统
-3. 所有中文必须准确流畅
-4. 只返回 JSON，不要任何其他文字`;
+1. wordForms 必须覆盖该词的所有常见词性变化形式（名词、动词、形容词、副词等），每种词性都要有独立条目
+2. 每个 wordForm 条目必须包含该词形的所有词汇变形（复数、过去式、现在分词、比较级等），并附带中文标注
+3. 每个 wordForm 条目必须配有一个地道的英文例句及中文翻译
+4. coreDefinition 必须是最精准的中文核心释义，简洁有力
+5. 例句必须地道、自然，分别体现正式文书、口语交流、学术论文三种风格
+6. 近义词辨析必须具体说明语境细微差别（Nuance），不要笼统
+7. 所有中文必须准确流畅
+8. 只返回 JSON，不要任何其他文字`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

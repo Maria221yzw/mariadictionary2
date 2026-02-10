@@ -6,11 +6,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import WordCardPopup from "@/components/WordCardPopup";
 
+export interface WordFormData {
+  word: string;
+  pos: string;
+  phonetic?: string;
+  meaningCn: string;
+  morphologies?: { type: string; typeCn: string; form: string }[];
+  example?: { sentence: string; translation: string };
+}
+
 export interface AIWordData {
   word: string;
   phonetic: string;
+  coreDefinition?: string;
   partOfSpeech: string[];
   definitions: { pos: string; meaning: string; meaningCn: string }[];
+  wordForms?: WordFormData[];
   examples: { context: string; sentence: string; translation: string }[];
   relatedWords: { type: string; words: string[] }[];
   synonymComparison?: { word: string; nuance: string; exampleDiff: string }[];

@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Bookmark, Volume2, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, Bookmark, ChevronRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,11 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { AIWordData } from "@/pages/SearchPage";
 import AddToCorpusDialog from "@/components/AddToCorpusDialog";
+import WordFormSection from "@/components/WordFormSection";
 
 export default function WordDetailPage() {
   const { word: wordKey } = useParams<{ word: string }>();
   const navigate = useNavigate();
-  const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [wordData, setWordData] = useState<AIWordData | null>(null);
   const [vocabId, setVocabId] = useState<string | null>(null);
@@ -28,7 +28,6 @@ export default function WordDetailPage() {
         if (error) throw error;
         setWordData(fnData);
 
-        // Upsert vocab
         const { data: existing } = await supabase
           .from("vocab_table")
           .select("id, lookup_count")
@@ -42,7 +41,7 @@ export default function WordDetailPage() {
           const { data: inserted } = await supabase.from("vocab_table").insert({
             word: fnData.word || wordKey,
             phonetic: fnData.phonetic || "",
-            chinese_definition: fnData.definitions?.[0]?.meaningCn || "",
+            chinese_definition: fnData.coreDefinition || fnData.definitions?.[0]?.meaningCn || "",
           }).select("id").single();
           setVocabId(inserted?.id || null);
         }
@@ -82,6 +81,7 @@ export default function WordDetailPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-24">
       <motion.div variants={container} initial="hidden" animate="show">
+        {/* Nav bar */}
         <motion.div variants={item} className="flex items-center justify-between mb-6">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-sm transition-colors">
             <ArrowLeft className="h-4 w-4" /> 返回
@@ -91,11 +91,15 @@ export default function WordDetailPage() {
           </button>
         </motion.div>
 
-        <motion.div variants={item} className="mb-8">
-          <div className="flex items-end gap-3 mb-2">
+        {/* Core definition header */}
+        <motion.div variants={item} className="mb-6">
+          <div className="flex items-end gap-3 mb-1">
             <h1 className="text-4xl font-display font-bold text-foreground">{wordData.word}</h1>
             <span className="text-sm font-mono text-muted-foreground mb-1">{wordData.phonetic}</span>
           </div>
+          {wordData.coreDefinition && (
+            <p className="text-lg text-primary font-semibold mt-2">{wordData.coreDefinition}</p>
+          )}
           <div className="flex gap-2 mt-3">
             {wordData.suggestedTags?.map(tag => <span key={tag} className="tag-chip">{tag}</span>)}
             {wordData.difficulty && (
@@ -106,25 +110,36 @@ export default function WordDetailPage() {
           </div>
         </motion.div>
 
+        {/* Tabs */}
         <motion.div variants={item}>
-          <Tabs defaultValue="definition" className="w-full">
+          <Tabs defaultValue="forms" className="w-full">
             <TabsList className="w-full bg-muted/50 p-1 rounded-xl mb-4">
-              <TabsTrigger value="definition" className="flex-1 rounded-lg text-xs">基础释义</TabsTrigger>
+              <TabsTrigger value="forms" className="flex-1 rounded-lg text-xs">词性变形</TabsTrigger>
               <TabsTrigger value="examples" className="flex-1 rounded-lg text-xs">分类例句</TabsTrigger>
               <TabsTrigger value="synonyms" className="flex-1 rounded-lg text-xs">近义词辨析</TabsTrigger>
               <TabsTrigger value="related" className="flex-1 rounded-lg text-xs">延展</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="definition">
-              <div className="space-y-3">
-                {wordData.definitions?.map((def, i) => (
-                  <div key={i} className="bg-card rounded-xl p-4 shadow-warm">
-                    <span className="text-xs font-mono text-primary font-medium">{def.pos}</span>
-                    <p className="text-sm text-foreground mt-1">{def.meaning}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{def.meaningCn}</p>
-                  </div>
-                ))}
-              </div>
+            {/* Word Forms - collapsible panels */}
+            <TabsContent value="forms">
+              {wordData.wordForms && wordData.wordForms.length > 0 ? (
+                <div className="space-y-3">
+                  {wordData.wordForms.map((form, i) => (
+                    <WordFormSection key={i} form={form} defaultOpen={i === 0} />
+                  ))}
+                </div>
+              ) : (
+                /* Fallback to old definitions */
+                <div className="space-y-3">
+                  {wordData.definitions?.map((def, i) => (
+                    <div key={i} className="bg-card rounded-xl p-4 shadow-warm">
+                      <span className="text-xs font-mono text-primary font-medium">{def.pos}</span>
+                      <p className="text-sm text-foreground mt-1">{def.meaning}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{def.meaningCn}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="examples">
