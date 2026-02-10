@@ -46,8 +46,13 @@ export default function WordCardPopup({ wordData, vocabId, onClose, onViewDetail
             <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm">✕</button>
           </div>
 
-          {/* Basic definition */}
-          <div className="mt-3 space-y-1">
+          {/* Core definition */}
+          {wordData.coreDefinition && (
+            <p className="mt-2 text-base font-semibold text-primary">{wordData.coreDefinition}</p>
+          )}
+
+          {/* Definitions by pos */}
+          <div className="mt-2 space-y-1">
             {wordData.definitions?.slice(0, 2).map((def, i) => (
               <p key={i} className="text-sm text-foreground">
                 <span className="text-muted-foreground">{def.pos}</span> {def.meaningCn}
