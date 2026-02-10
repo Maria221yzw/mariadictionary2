@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ArrowRight, Bookmark, AlertTriangle, TrendingUp, Loader2 } from "lucide-react";
+import { Search, ArrowRight, Bookmark, AlertTriangle, TrendingUp, Loader2, Trash2, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -29,12 +29,56 @@ export interface AIWordData {
   difficulty?: string;
 }
 
+interface HistoryItem {
+  word: string;
+  pos: string;
+  meaningCn: string;
+  timestamp: number;
+}
+
+const HISTORY_KEY = "search_history";
+const MAX_HISTORY = 20;
+
+function loadHistory(): HistoryItem[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(items: HistoryItem[]) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [wordData, setWordData] = useState<AIWordData | null>(null);
   const [vocabId, setVocabId] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
   const navigate = useNavigate();
+
+  const addToHistory = useCallback((data: AIWordData) => {
+    setHistory((prev) => {
+      const filtered = prev.filter((h) => h.word.toLowerCase() !== data.word.toLowerCase());
+      const item: HistoryItem = {
+        word: data.word,
+        pos: data.definitions?.[0]?.pos || "",
+        meaningCn: data.coreDefinition || data.definitions?.[0]?.meaningCn || "",
+        timestamp: Date.now(),
+      };
+      const next = [item, ...filtered].slice(0, MAX_HISTORY);
+      saveHistory(next);
+      return next;
+    });
+  }, []);
+
+  const clearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem(HISTORY_KEY);
+  };
 
   const handleSearch = async (word?: string) => {
     const target = (word || query).trim();
@@ -44,20 +88,21 @@ export default function SearchPage() {
     setWordData(null);
 
     try {
-      // Call AI edge function
       const { data: fnData, error: fnError } = await supabase.functions.invoke("word-expand", {
         body: { word: target },
       });
 
       if (fnError) throw fnError;
 
-      setWordData(fnData as AIWordData);
+      const result = fnData as AIWordData;
+      setWordData(result);
+      addToHistory(result);
 
       // Upsert into vocab_table
       const { data: existing } = await supabase
         .from("vocab_table")
         .select("id, lookup_count")
-        .eq("word", fnData.word || target)
+        .eq("word", result.word || target)
         .maybeSingle();
 
       if (existing) {
@@ -70,9 +115,9 @@ export default function SearchPage() {
         const { data: inserted } = await supabase
           .from("vocab_table")
           .insert({
-            word: fnData.word || target,
-            phonetic: fnData.phonetic || "",
-            chinese_definition: fnData.definitions?.[0]?.meaningCn || "",
+            word: result.word || target,
+            phonetic: result.phonetic || "",
+            chinese_definition: result.definitions?.[0]?.meaningCn || "",
           })
           .select("id")
           .single();
@@ -143,6 +188,48 @@ export default function SearchPage() {
           ))}
         </div>
 
+        {/* Translation History */}
+        {!wordData && !loading && history.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="mt-10 w-full text-left"
+          >
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold text-foreground">翻译历史</span>
+              </div>
+              <button
+                onClick={clearHistory}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                title="清空历史"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="bg-card rounded-xl shadow-warm divide-y divide-border/50 overflow-hidden">
+              {history.map((item, i) => (
+                <motion.button
+                  key={item.word + item.timestamp}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  onClick={() => { setQuery(item.word); handleSearch(item.word); }}
+                  className="w-full flex items-baseline gap-2 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+                >
+                  <span className="text-sm font-semibold text-foreground truncate">{item.word}</span>
+                  {item.pos && (
+                    <span className="text-xs text-primary/70 font-medium shrink-0">{item.pos}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground truncate ml-auto">{item.meaningCn}</span>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {/* Loading state */}
         {loading && (
           <motion.div
@@ -169,7 +256,7 @@ export default function SearchPage() {
         </AnimatePresence>
 
         {/* Feature hints */}
-        {!wordData && !loading && (
+        {!wordData && !loading && history.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
