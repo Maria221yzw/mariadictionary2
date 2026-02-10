@@ -14,7 +14,80 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      corpus_entries: {
+        Row: {
+          application_scenario: Database["public"]["Enums"]["app_scenario"]
+          created_at: string
+          custom_tags: string[] | null
+          difficulty_level: string
+          id: string
+          personal_notes: string | null
+          source_text: string | null
+          updated_at: string
+          user_id: string
+          word_id: string
+        }
+        Insert: {
+          application_scenario?: Database["public"]["Enums"]["app_scenario"]
+          created_at?: string
+          custom_tags?: string[] | null
+          difficulty_level?: string
+          id?: string
+          personal_notes?: string | null
+          source_text?: string | null
+          updated_at?: string
+          user_id: string
+          word_id: string
+        }
+        Update: {
+          application_scenario?: Database["public"]["Enums"]["app_scenario"]
+          created_at?: string
+          custom_tags?: string[] | null
+          difficulty_level?: string
+          id?: string
+          personal_notes?: string | null
+          source_text?: string | null
+          updated_at?: string
+          user_id?: string
+          word_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "corpus_entries_word_id_fkey"
+            columns: ["word_id"]
+            isOneToOne: false
+            referencedRelation: "vocab_table"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vocab_table: {
+        Row: {
+          chinese_definition: string
+          created_at: string
+          id: string
+          lookup_count: number
+          phonetic: string | null
+          word: string
+        }
+        Insert: {
+          chinese_definition: string
+          created_at?: string
+          id?: string
+          lookup_count?: number
+          phonetic?: string | null
+          word: string
+        }
+        Update: {
+          chinese_definition?: string
+          created_at?: string
+          id?: string
+          lookup_count?: number
+          phonetic?: string | null
+          word?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +96,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_scenario: "学术写作" | "翻译练习" | "日常口语" | "专业课笔记"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +223,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_scenario: ["学术写作", "翻译练习", "日常口语", "专业课笔记"],
+    },
   },
 } as const

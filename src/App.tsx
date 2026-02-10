@@ -8,6 +8,7 @@ import SearchPage from "@/pages/SearchPage";
 import WordDetailPage from "@/pages/WordDetailPage";
 import CorpusPage from "@/pages/CorpusPage";
 import ReviewPage from "@/pages/ReviewPage";
+import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/word/:word" element={<WordDetailPage />} />
             <Route path="/corpus" element={<CorpusPage />} />
             <Route path="/review" element={<ReviewPage />} />
+            <Route path="/auth" element={<AuthPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppLayout>
