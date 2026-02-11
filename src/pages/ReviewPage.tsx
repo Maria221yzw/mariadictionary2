@@ -1,29 +1,82 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw } from "lucide-react";
-import { mockReviewQuestions, type ReviewQuestion } from "@/lib/mockData";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+
+interface ReviewQuestion {
+  id: string;
+  type: "fill-blank" | "translate";
+  prompt: string;
+  answer: string;
+  options?: string[];
+  relatedWord: string;
+}
 
 export default function ReviewPage() {
+  const navigate = useNavigate();
+  const [questions, setQuestions] = useState<ReviewQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [empty, setEmpty] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [translationInput, setTranslationInput] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
 
-  const question = mockReviewQuestions[currentIdx];
-  const isLast = currentIdx === mockReviewQuestions.length - 1;
-  const allDone = currentIdx >= mockReviewQuestions.length;
+  const fetchQuestions = async () => {
+    setLoading(true);
+    setEmpty(false);
+    setQuestions([]);
+    setCurrentIdx(0);
+    setSelectedAnswer(null);
+    setTranslationInput("");
+    setRevealed(false);
+    setScore({ correct: 0, total: 0 });
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("请先登录");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("generate-review", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (error) throw error;
+
+      if (data.empty) {
+        setEmpty(true);
+      } else {
+        setQuestions(data.questions || []);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("生成练习题失败，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuestions();
+  }, []);
+
+  const question = questions[currentIdx];
+  const isLast = currentIdx === questions.length - 1;
+  const allDone = questions.length > 0 && currentIdx >= questions.length;
 
   const handleCheck = () => {
     if (question.type === "fill-blank") {
       const correct = selectedAnswer === question.answer;
       setScore(s => ({ correct: s.correct + (correct ? 1 : 0), total: s.total + 1 }));
-      setRevealed(true);
     } else {
-      setScore(s => ({ correct: s.correct, total: s.total + 1 }));
-      setRevealed(true);
+      setScore(s => ({ ...s, total: s.total + 1 }));
     }
+    setRevealed(true);
   };
 
   const handleNext = () => {
@@ -33,14 +86,38 @@ export default function ReviewPage() {
     setCurrentIdx(i => i + 1);
   };
 
-  const handleRestart = () => {
-    setCurrentIdx(0);
-    setSelectedAnswer(null);
-    setTranslationInput("");
-    setRevealed(false);
-    setScore({ correct: 0, total: 0 });
-  };
+  // Loading state
+  if (loading) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+        <p className="text-muted-foreground">正在根据你的语料库生成练习题…</p>
+      </div>
+    );
+  }
 
+  // Empty corpus state
+  if (empty) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+          <div className="w-20 h-20 mx-auto rounded-full bg-muted flex items-center justify-center mb-6">
+            <BookOpen className="h-10 w-10 text-muted-foreground" />
+          </div>
+          <h2 className="text-2xl font-display font-bold text-foreground mb-2">语料库还是空的</h2>
+          <p className="text-muted-foreground mb-6">快去捕获一些语言灵感吧！</p>
+          <button
+            onClick={() => navigate("/search")}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity"
+          >
+            去查词
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Completion state
   if (allDone) {
     return (
       <div className="max-w-lg mx-auto px-4 py-16 text-center">
@@ -59,7 +136,7 @@ export default function ReviewPage() {
             />
           </div>
           <button
-            onClick={handleRestart}
+            onClick={fetchQuestions}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity"
           >
             <RotateCcw className="h-4 w-4" />
@@ -69,6 +146,8 @@ export default function ReviewPage() {
       </div>
     );
   }
+
+  if (!question) return null;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8 pb-24">
@@ -85,11 +164,11 @@ export default function ReviewPage() {
         <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
           <motion.div
             className="h-full rounded-full bg-primary"
-            animate={{ width: `${((currentIdx + 1) / mockReviewQuestions.length) * 100}%` }}
+            animate={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
-        <span className="text-xs text-muted-foreground">{currentIdx + 1}/{mockReviewQuestions.length}</span>
+        <span className="text-xs text-muted-foreground">{currentIdx + 1}/{questions.length}</span>
       </div>
 
       <AnimatePresence mode="wait">
