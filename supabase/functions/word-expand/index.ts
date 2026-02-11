@@ -111,21 +111,8 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "请求过于频繁，请稍后再试" }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI 额度已用尽，请充值" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      return new Response(JSON.stringify({ error: "AI 服务暂时不可用" }), {
+      console.error("AI gateway error:", response.status);
+      return new Response(JSON.stringify({ error: "服务暂时不可用，请稍后重试" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -146,7 +133,7 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("word-expand error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+    return new Response(JSON.stringify({ error: "服务暂时不可用，请稍后重试" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

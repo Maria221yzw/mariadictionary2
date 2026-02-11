@@ -88,6 +88,13 @@ export default function SearchPage() {
     setWordData(null);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("请先登录后再查词");
+        setLoading(false);
+        return;
+      }
+
       const { data: fnData, error: fnError } = await supabase.functions.invoke("word-expand", {
         body: { word: target },
       });
@@ -98,11 +105,12 @@ export default function SearchPage() {
       setWordData(result);
       addToHistory(result);
 
-      // Upsert into vocab_table
+      // Upsert into vocab_table (user-scoped)
       const { data: existing } = await supabase
         .from("vocab_table")
         .select("id, lookup_count")
         .eq("word", result.word || target)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (existing) {
@@ -115,9 +123,10 @@ export default function SearchPage() {
         const { data: inserted } = await supabase
           .from("vocab_table")
           .insert({
-            word: result.word || target,
-            phonetic: result.phonetic || "",
-            chinese_definition: result.definitions?.[0]?.meaningCn || "",
+            word: (result.word || target).slice(0, 100),
+            phonetic: (result.phonetic || "").slice(0, 200),
+            chinese_definition: (result.definitions?.[0]?.meaningCn || "").slice(0, 500),
+            user_id: user.id,
           })
           .select("id")
           .single();
@@ -125,7 +134,7 @@ export default function SearchPage() {
       }
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message || "查词失败，请重试");
+      toast.error("查词失败，请稍后重试");
     } finally {
       setLoading(false);
     }

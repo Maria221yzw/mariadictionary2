@@ -68,6 +68,7 @@ export type Database = {
           id: string
           lookup_count: number
           phonetic: string | null
+          user_id: string
           word: string
         }
         Insert: {
@@ -76,6 +77,7 @@ export type Database = {
           id?: string
           lookup_count?: number
           phonetic?: string | null
+          user_id: string
           word: string
         }
         Update: {
@@ -84,6 +86,7 @@ export type Database = {
           id?: string
           lookup_count?: number
           phonetic?: string | null
+          user_id?: string
           word?: string
         }
         Relationships: []

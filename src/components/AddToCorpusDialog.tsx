@@ -174,7 +174,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
       onClose();
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message || "保存失败");
+      toast.error("保存失败，请稍后重试");
     } finally {
       setSaving(false);
     }
