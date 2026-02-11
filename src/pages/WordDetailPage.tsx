@@ -24,6 +24,13 @@ export default function WordDetailPage() {
     const fetchWord = async () => {
       setLoading(true);
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          toast.error("请先登录");
+          setLoading(false);
+          return;
+        }
+
         const { data: fnData, error } = await supabase.functions.invoke("word-expand", {
           body: { word: decodeURIComponent(wordKey) },
         });
@@ -34,6 +41,7 @@ export default function WordDetailPage() {
           .from("vocab_table")
           .select("id, lookup_count")
           .eq("word", fnData.word || wordKey)
+          .eq("user_id", user.id)
           .maybeSingle();
 
         if (existing) {
@@ -41,15 +49,16 @@ export default function WordDetailPage() {
           setVocabId(existing.id);
         } else {
           const { data: inserted } = await supabase.from("vocab_table").insert({
-            word: fnData.word || wordKey,
-            phonetic: fnData.phonetic || "",
-            chinese_definition: fnData.coreDefinition || fnData.definitions?.[0]?.meaningCn || "",
+            word: (fnData.word || wordKey).slice(0, 100),
+            phonetic: (fnData.phonetic || "").slice(0, 200),
+            chinese_definition: (fnData.coreDefinition || fnData.definitions?.[0]?.meaningCn || "").slice(0, 500),
+            user_id: user.id,
           }).select("id").single();
           setVocabId(inserted?.id || null);
         }
       } catch (e: any) {
         console.error(e);
-        toast.error("加载失败");
+        toast.error("加载失败，请稍后重试");
       } finally {
         setLoading(false);
       }
