@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Bookmark, ChevronRight, Loader2, Volume2 } from "lucide-react";
+import { ArrowLeft, Bookmark, ChevronRight, Loader2, Volume2, Plus, Eye } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,6 +16,7 @@ export default function WordDetailPage() {
   const [loading, setLoading] = useState(true);
   const [wordData, setWordData] = useState<AIWordData | null>(null);
   const [vocabId, setVocabId] = useState<string | null>(null);
+  const [lookupCount, setLookupCount] = useState<number>(0);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
   const { speaking, speak } = useSpeech();
 
@@ -45,8 +46,10 @@ export default function WordDetailPage() {
           .maybeSingle();
 
         if (existing) {
-          await supabase.from("vocab_table").update({ lookup_count: existing.lookup_count + 1 }).eq("id", existing.id);
+          const newCount = existing.lookup_count + 1;
+          await supabase.from("vocab_table").update({ lookup_count: newCount }).eq("id", existing.id);
           setVocabId(existing.id);
+          setLookupCount(newCount);
         } else {
           const { data: inserted } = await supabase.from("vocab_table").insert({
             word: (fnData.word || wordKey).slice(0, 100),
@@ -55,6 +58,7 @@ export default function WordDetailPage() {
             user_id: user.id,
           }).select("id").single();
           setVocabId(inserted?.id || null);
+          setLookupCount(1);
         }
       } catch (e: any) {
         console.error(e);
@@ -105,7 +109,14 @@ export default function WordDetailPage() {
         {/* ===== Dictionary-style Header ===== */}
         <motion.div variants={item} className="bg-card rounded-2xl shadow-warm p-6 mb-4">
           {/* Word */}
-          <h1 className="text-4xl font-display font-bold text-foreground tracking-tight">{wordData.word}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-display font-bold text-foreground tracking-tight">{wordData.word}</h1>
+            {lookupCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs text-muted-foreground">
+                <Eye className="h-3 w-3" /> 已查 {lookupCount} 次
+              </span>
+            )}
+          </div>
 
           {/* Phonetics with TTS */}
           <div className="flex items-center gap-4 mt-3">
@@ -171,8 +182,10 @@ export default function WordDetailPage() {
           <Tabs defaultValue="forms" className="w-full">
             <TabsList className="w-full bg-muted/50 p-1 rounded-xl mb-4">
               <TabsTrigger value="forms" className="flex-1 rounded-lg text-xs">词性变形</TabsTrigger>
+              <TabsTrigger value="phrases" className="flex-1 rounded-lg text-xs">词组短语</TabsTrigger>
               <TabsTrigger value="examples" className="flex-1 rounded-lg text-xs">分类例句</TabsTrigger>
-              <TabsTrigger value="synonyms" className="flex-1 rounded-lg text-xs">近义词辨析</TabsTrigger>
+              <TabsTrigger value="etymology" className="flex-1 rounded-lg text-xs">词根词缀</TabsTrigger>
+              <TabsTrigger value="synonyms" className="flex-1 rounded-lg text-xs">近义词</TabsTrigger>
               <TabsTrigger value="related" className="flex-1 rounded-lg text-xs">延展</TabsTrigger>
             </TabsList>
 
@@ -197,6 +210,39 @@ export default function WordDetailPage() {
               )}
             </TabsContent>
 
+            {/* Phrases & Collocations */}
+            <TabsContent value="phrases">
+              {wordData.phrases && wordData.phrases.length > 0 ? (
+                <div className="space-y-2">
+                  {wordData.phrases.map((p, i) => (
+                    <div key={i} className="bg-card rounded-xl p-4 shadow-warm flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <button
+                          onClick={() => navigate(`/word/${encodeURIComponent(p.phrase.toLowerCase())}`)}
+                          className="text-sm font-semibold text-primary hover:underline"
+                        >
+                          {p.phrase}
+                        </button>
+                        <p className="text-xs text-muted-foreground mt-0.5">{p.meaningCn}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (!vocabId) { toast.error("请稍后再试"); return; }
+                          setShowCorpusDialog(true);
+                        }}
+                        className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        title="加入语料库"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">暂无词组短语数据</p>
+              )}
+            </TabsContent>
+
             <TabsContent value="examples">
               <div className="space-y-3">
                 {wordData.examples?.map((ex, i) => (
@@ -207,6 +253,35 @@ export default function WordDetailPage() {
                   </div>
                 ))}
               </div>
+            </TabsContent>
+
+            {/* Etymology / Roots */}
+            <TabsContent value="etymology">
+              {wordData.etymology && wordData.etymology.length > 0 ? (
+                <div className="space-y-3">
+                  {wordData.etymology.map((ety, i) => (
+                    <div key={i} className="bg-card rounded-xl p-5 shadow-warm">
+                      <p className="text-sm font-semibold text-foreground">
+                        <span className="font-mono text-primary mr-2">{ety.root}</span>
+                        {ety.meaning}
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {ety.relatedWords.map(w => (
+                          <button
+                            key={w}
+                            onClick={() => navigate(`/word/${encodeURIComponent(w.toLowerCase())}`)}
+                            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            {w} <ChevronRight className="inline h-3 w-3 ml-0.5" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">暂无词根词缀数据</p>
+              )}
             </TabsContent>
 
             <TabsContent value="synonyms">
@@ -223,7 +298,14 @@ export default function WordDetailPage() {
                     <tbody>
                       {wordData.synonymComparison.map((s, i) => (
                         <tr key={i} className="border-b last:border-0">
-                          <td className="p-3 font-medium text-primary">{s.word}</td>
+                          <td className="p-3 font-medium">
+                            <button
+                              onClick={() => navigate(`/word/${encodeURIComponent(s.word.toLowerCase())}`)}
+                              className="text-primary hover:underline"
+                            >
+                              {s.word}
+                            </button>
+                          </td>
                           <td className="p-3 text-foreground text-xs">{s.nuance}</td>
                           <td className="p-3 text-muted-foreground text-xs">{s.exampleDiff}</td>
                         </tr>
