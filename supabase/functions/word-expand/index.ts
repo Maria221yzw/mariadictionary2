@@ -67,6 +67,13 @@ serve(async (req) => {
       "example": {"sentence": "英文例句", "translation": "中文翻译"}
     }
   ],
+  "phrases": [
+    {"phrase": "come across", "meaningCn": "偶然遇见；被理解"},
+    {"phrase": "come up with", "meaningCn": "想出；提出"}
+  ],
+  "etymology": [
+    {"root": "duct (拉丁语 ducere)", "meaning": "引导、带领", "relatedWords": ["conduct", "deduce", "introduce", "produce"]}
+  ],
   "examples": [
     {"context": "正式文书风格", "sentence": "英文例句", "translation": "中文翻译"},
     {"context": "口语交流风格", "sentence": "英文例句", "translation": "中文翻译"},
@@ -93,7 +100,9 @@ serve(async (req) => {
 5. 例句必须地道、自然，分别体现正式文书、口语交流、学术论文三种风格
 6. 近义词辨析必须具体说明语境细微差别（Nuance），不要笼统
 7. 所有中文必须准确流畅
-8. 只返回 JSON，不要任何其他文字`;
+8. phrases 必须列出该单词3-5个最地道、最常用的词组和固定搭配，每个配中文释义
+9. etymology 必须列出该单词的词根词缀信息，包括词根的语源（如拉丁语、希腊语）、含义，以及3-5个同根词
+10. 只返回 JSON，不要任何其他文字`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

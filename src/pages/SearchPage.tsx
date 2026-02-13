@@ -27,6 +27,8 @@ export interface AIWordData {
   synonymComparison?: { word: string; nuance: string; exampleDiff: string }[];
   suggestedTags?: string[];
   difficulty?: string;
+  phrases?: { phrase: string; meaningCn: string }[];
+  etymology?: { root: string; meaning: string; relatedWords: string[] }[];
 }
 
 interface HistoryItem {
@@ -34,6 +36,7 @@ interface HistoryItem {
   pos: string;
   meaningCn: string;
   timestamp: number;
+  lookupCount?: number;
 }
 
 const HISTORY_KEY = "search_history";
@@ -60,7 +63,7 @@ export default function SearchPage() {
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
   const navigate = useNavigate();
 
-  const addToHistory = useCallback((data: AIWordData) => {
+  const addToHistory = useCallback((data: AIWordData, lookupCount?: number) => {
     setHistory((prev) => {
       const filtered = prev.filter((h) => h.word.toLowerCase() !== data.word.toLowerCase());
       const item: HistoryItem = {
@@ -68,6 +71,7 @@ export default function SearchPage() {
         pos: data.definitions?.[0]?.pos || "",
         meaningCn: data.coreDefinition || data.definitions?.[0]?.meaningCn || "",
         timestamp: Date.now(),
+        lookupCount,
       };
       const next = [item, ...filtered].slice(0, MAX_HISTORY);
       saveHistory(next);
@@ -103,7 +107,8 @@ export default function SearchPage() {
 
       const result = fnData as AIWordData;
       setWordData(result);
-      addToHistory(result);
+
+      // Upsert and get lookup count
 
       // Upsert into vocab_table (user-scoped)
       const { data: existing } = await supabase
@@ -114,11 +119,13 @@ export default function SearchPage() {
         .maybeSingle();
 
       if (existing) {
+        const newCount = existing.lookup_count + 1;
         await supabase
           .from("vocab_table")
-          .update({ lookup_count: existing.lookup_count + 1 })
+          .update({ lookup_count: newCount })
           .eq("id", existing.id);
         setVocabId(existing.id);
+        addToHistory(result, newCount);
       } else {
         const { data: inserted } = await supabase
           .from("vocab_table")
@@ -131,6 +138,7 @@ export default function SearchPage() {
           .select("id")
           .single();
         setVocabId(inserted?.id || null);
+        addToHistory(result, 1);
       }
     } catch (e: any) {
       console.error(e);
@@ -268,7 +276,10 @@ export default function SearchPage() {
                   {item.pos && (
                     <span className="text-xs text-primary/70 font-medium shrink-0">{item.pos}</span>
                   )}
-                  <span className="text-xs text-muted-foreground truncate ml-auto">{item.meaningCn}</span>
+                  <span className="text-xs text-muted-foreground truncate flex-1">{item.meaningCn}</span>
+                  {item.lookupCount && item.lookupCount > 1 && (
+                    <span className="text-[10px] text-muted-foreground/70 shrink-0 tabular-nums">已查 {item.lookupCount} 次</span>
+                  )}
                 </motion.button>
               ))}
             </div>
