@@ -112,6 +112,8 @@ export default function ReviewPage() {
   const [synthIdx, setSynthIdx] = useState(0);
   const [synthInput, setSynthInput] = useState("");
   const [synthRevealed, setSynthRevealed] = useState(false);
+  const [synthScoring, setSynthScoring] = useState(false);
+  const [synthScore, setSynthScore] = useState<any>(null);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("review_onboarding_seen"));
 
   // Fetch vocab
@@ -270,7 +272,7 @@ export default function ReviewPage() {
     setComboData(null);
     setNarrativeAnswers({}); setNarrativeRevealed(false);
     setNuanceIdx(0); setNuanceAnswers({}); setNuanceRevealed(false);
-    setSynthIdx(0); setSynthInput(""); setSynthRevealed(false);
+    setSynthIdx(0); setSynthInput(""); setSynthRevealed(false); setSynthScoring(false); setSynthScore(null);
   };
 
   const comboPhases: ComboPhase[] = comboData
@@ -752,15 +754,101 @@ export default function ReviewPage() {
                               </div>
                             </div>
                           )}
+                          {/* AI Score Section */}
+                          {synthScoring && (
+                            <div className="flex items-center justify-center gap-2 py-4">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                              <span className="text-sm text-muted-foreground">AI 正在评分…</span>
+                            </div>
+                          )}
+                          {synthScore && !synthScoring && (
+                            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-xl p-4 space-y-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold text-white ${
+                                  synthScore.score >= 90 ? "bg-emerald-500" : synthScore.score >= 75 ? "bg-primary" : synthScore.score >= 60 ? "bg-yellow-500" : "bg-red-500"
+                                }`}>
+                                  {synthScore.score}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold text-foreground">{synthScore.level}</p>
+                                  <p className="text-[10px] text-muted-foreground">AI 综合评分</p>
+                                </div>
+                              </div>
+                              {synthScore.dimensions && (
+                                <div className="space-y-2">
+                                  {synthScore.dimensions.map((d: any, i: number) => (
+                                    <div key={i}>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-[11px] text-foreground font-medium">{d.name}</span>
+                                        <span className="text-[11px] text-muted-foreground">{d.score}/{d.max}</span>
+                                      </div>
+                                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(d.score / d.max) * 100}%` }} />
+                                      </div>
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">{d.comment}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {synthScore.highlights && synthScore.highlights.length > 0 && (
+                                <div>
+                                  <p className="text-[11px] font-medium text-emerald-600 mb-1">✅ 做得好：</p>
+                                  {synthScore.highlights.map((h: string, i: number) => (
+                                    <p key={i} className="text-[11px] text-muted-foreground">• {h}</p>
+                                  ))}
+                                </div>
+                              )}
+                              {synthScore.improvements && synthScore.improvements.length > 0 && (
+                                <div>
+                                  <p className="text-[11px] font-medium text-amber-600 mb-1">💡 改进建议：</p>
+                                  {synthScore.improvements.map((imp: string, i: number) => (
+                                    <p key={i} className="text-[11px] text-muted-foreground">• {imp}</p>
+                                  ))}
+                                </div>
+                              )}
+                              {synthScore.correctedVersion && (
+                                <div className="bg-muted/30 rounded-lg p-3">
+                                  <p className="text-[11px] font-medium text-foreground mb-1">📝 修正参考：</p>
+                                  <p className="text-xs text-foreground leading-relaxed">{synthScore.correctedVersion}</p>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
                         </motion.div>
                       )}
                       <div className="flex gap-2">
                         {!synthRevealed ? (
-                          <button onClick={() => setSynthRevealed(true)} disabled={!synthInput.trim()} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
-                            <Eye className="h-4 w-4" /> 查看参考译文
+                          <button
+                            onClick={async () => {
+                              setSynthRevealed(true);
+                              setSynthScoring(true);
+                              setSynthScore(null);
+                              try {
+                                const { data, error } = await supabase.functions.invoke("score-translation", {
+                                  body: {
+                                    userTranslation: synthInput,
+                                    referenceSentence: q.referenceSentence.replace(/\*\*/g, ""),
+                                    chinesePrompt: chineseText,
+                                    targetWords: q.targetWords,
+                                  },
+                                });
+                                if (error) throw error;
+                                if (data.error) throw new Error(data.error);
+                                setSynthScore(data);
+                              } catch (e: any) {
+                                console.error(e);
+                                toast.error(e.message || "评分失败");
+                              } finally {
+                                setSynthScoring(false);
+                              }
+                            }}
+                            disabled={!synthInput.trim()}
+                            className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1"
+                          >
+                            <Eye className="h-4 w-4" /> 提交并评分
                           </button>
                         ) : synthIdx < comboData.synthesisQuestions.length - 1 ? (
-                          <button onClick={() => { setSynthIdx(i => i + 1); setSynthInput(""); setSynthRevealed(false); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
+                          <button onClick={() => { setSynthIdx(i => i + 1); setSynthInput(""); setSynthRevealed(false); setSynthScore(null); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
                         ) : (
                           <button onClick={goNextComboPhase} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">查看总结 <Sparkles className="h-4 w-4" /></button>
                         )}
