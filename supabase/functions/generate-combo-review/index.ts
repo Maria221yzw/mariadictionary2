@@ -46,7 +46,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const systemPrompt = `你是一个高级英语组合记忆练习生成器，专为雅思/专八考生设计。用户会提供一组 2-5 个单词，你需要生成三类题目和一份总结。
+    const systemPrompt = `你是一个高级英语组合记忆练习生成器，专为雅思/专八考生设计。用户会提供一组 2-5 个单词，你需要生成四类题目和一份总结。
 
 所有返回必须为严格 JSON，格式如下：
 
@@ -74,6 +74,14 @@ serve(async (req) => {
       "exampleSentence": "包含正确搭配的例句"
     }
   ],
+  "synthesisQuestions": [
+    {
+      "targetWords": ["word1", "word2"],
+      "chineseSentences": ["中文简单句1", "中文简单句2"],
+      "referenceSentence": "使用目标词将两句合并后的英文长难句参考答案",
+      "hint": "简短的中文提示，引导用户如何合并（15字内）"
+    }
+  ],
   "summary": {
     "relationship": "这组词的逻辑关系类型（如：因果关系、对比关系、同类主题等）",
     "explanation": "50-80字的中文解析，说明这几个词之间的语义网络和记忆联系"
@@ -84,8 +92,9 @@ serve(async (req) => {
 1. narrativeCloze: 短文需自然流畅，blanks 按出现顺序列出，distractors 增加2个同难度干扰词
 2. nuanceQuestions: 只在有近义词对时生成，最多2题。如无近义词可返回空数组
 3. collocationQuestions: 每个选定单词生成一道搭配题，options包含4个选项
-4. summary: 必须提供，分析词汇间的逻辑联系
-5. 只返回JSON，不要任何其他文字`;
+4. synthesisQuestions: 从选定单词中取2个词为一组，生成1-2道句子合并题。给出两个简短中文句子，要求用户使用指定的两个英文单词合并重写为一个高级长难句。referenceSentence必须自然地包含这两个目标词
+5. summary: 必须提供，分析词汇间的逻辑联系
+6. 只返回JSON，不要任何其他文字`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

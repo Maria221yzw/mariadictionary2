@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Square, CheckSquare } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -38,10 +38,17 @@ interface NuanceQuestion {
 interface CollocationQuestion {
   word: string; correctPrep: string; options: string[]; exampleSentence: string;
 }
+interface SynthesisQuestion {
+  targetWords: string[];
+  chineseSentences: string[];
+  referenceSentence: string;
+  hint: string;
+}
 interface ComboData {
   narrativeCloze: NarrativeCloze;
   nuanceQuestions: NuanceQuestion[];
   collocationQuestions: CollocationQuestion[];
+  synthesisQuestions: SynthesisQuestion[];
   summary: { relationship: string; explanation: string };
 }
 
@@ -63,10 +70,10 @@ const MASTERY_LABELS: Record<number, string> = {
 };
 
 type PageMode = "dashboard" | "review" | "combo";
-type ComboPhase = "narrative" | "nuance" | "collocation" | "summary";
+type ComboPhase = "narrative" | "nuance" | "collocation" | "synthesis" | "summary";
 
 const COMBO_PHASE_LABELS: Record<ComboPhase, string> = {
-  narrative: "叙事填空", nuance: "近义辨析", collocation: "搭配匹配", summary: "AI 总结",
+  narrative: "叙事填空", nuance: "近义辨析", collocation: "搭配匹配", synthesis: "句子重写", summary: "AI 总结",
 };
 
 export default function ReviewPage() {
@@ -105,6 +112,9 @@ export default function ReviewPage() {
   const [colAnswer, setColAnswer] = useState<string | null>(null);
   const [colRevealed, setColRevealed] = useState(false);
   const [colResults, setColResults] = useState<Record<number, boolean>>({});
+  const [synthIdx, setSynthIdx] = useState(0);
+  const [synthInput, setSynthInput] = useState("");
+  const [synthRevealed, setSynthRevealed] = useState(false);
 
   // Fetch vocab
   const refreshVocab = useCallback(async () => {
@@ -132,6 +142,28 @@ export default function ReviewPage() {
   }, [allVocab, activeMastery]);
 
   const selectedWords = useMemo(() => allVocab.filter(v => selectedIds.has(v.id)), [allVocab, selectedIds]);
+
+  // Semantic field recommendation: find similar words based on chinese definition overlap
+  const semanticSuggestions = useMemo(() => {
+    if (selectedIds.size === 0 || selectedIds.size >= 5) return [];
+    const selectedDefs = selectedWords.map(w => w.chinese_definition);
+    // Extract key Chinese characters (2+ char segments) from selected definitions
+    const keywords = new Set<string>();
+    selectedDefs.forEach(def => {
+      const segments = def.match(/[\u4e00-\u9fa5]{2,}/g) || [];
+      segments.forEach(s => keywords.add(s));
+    });
+    if (keywords.size === 0) return [];
+    return allVocab
+      .filter(v => !selectedIds.has(v.id))
+      .map(v => {
+        const matchCount = Array.from(keywords).filter(kw => v.chinese_definition.includes(kw)).length;
+        return { ...v, matchCount };
+      })
+      .filter(v => v.matchCount > 0)
+      .sort((a, b) => b.matchCount - a.matchCount)
+      .slice(0, 3);
+  }, [allVocab, selectedIds, selectedWords]);
 
   // Toggle checkbox
   const toggleSelect = (id: string) => {
@@ -241,14 +273,16 @@ export default function ReviewPage() {
     setNarrativeAnswers({}); setNarrativeRevealed(false);
     setNuanceIdx(0); setNuanceAnswers({}); setNuanceRevealed(false);
     setColIdx(0); setColAnswer(null); setColRevealed(false); setColResults({});
+    setSynthIdx(0); setSynthInput(""); setSynthRevealed(false);
   };
 
   const comboPhases: ComboPhase[] = comboData
-    ? (["narrative", "nuance", "collocation", "summary"] as ComboPhase[]).filter(p => {
+    ? (["narrative", "nuance", "collocation", "synthesis", "summary"] as ComboPhase[]).filter(p => {
         if (p === "nuance" && (!comboData.nuanceQuestions || comboData.nuanceQuestions.length === 0)) return false;
+        if (p === "synthesis" && (!comboData.synthesisQuestions || comboData.synthesisQuestions.length === 0)) return false;
         return true;
       })
-    : ["narrative", "nuance", "collocation", "summary"];
+    : ["narrative", "nuance", "collocation", "synthesis", "summary"];
 
   const comboProgressPercent = ((comboPhases.indexOf(comboPhase) + 1) / comboPhases.length) * 100;
 
@@ -408,6 +442,34 @@ export default function ReviewPage() {
             )}
           </AnimatePresence>
         </motion.div>
+
+        {/* Semantic field recommendation */}
+        <AnimatePresence>
+          {semanticSuggestions.length > 0 && selectedIds.size >= 1 && selectedIds.size < 5 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="mt-4 bg-primary/5 border border-primary/15 rounded-xl p-3"
+            >
+              <p className="text-xs text-primary font-medium flex items-center gap-1 mb-2">
+                <Lightbulb className="h-3.5 w-3.5" /> 语义场推荐：检测到相似词汇，是否一并加入组合记忆？
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {semanticSuggestions.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleSelect(s.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-card border border-border hover:border-primary/40 text-foreground transition-colors"
+                  >
+                    <span>{s.word}</span>
+                    <span className="text-muted-foreground">({s.chinese_definition.slice(0, 8)})</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Floating action bar */}
         <AnimatePresence>
@@ -629,6 +691,61 @@ export default function ReviewPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground text-center mt-2">{colIdx + 1}/{comboData.collocationQuestions.length}</p>
+                    </div>
+                  );
+                })()}
+              </motion.div>
+            )}
+
+            {/* SYNTHESIS */}
+            {comboPhase === "synthesis" && comboData.synthesisQuestions && comboData.synthesisQuestions.length > 0 && (
+              <motion.div key="synthesis" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
+                {(() => {
+                  const q = comboData.synthesisQuestions[synthIdx];
+                  if (!q) return null;
+                  return (
+                    <div>
+                      <div className="bg-card rounded-2xl p-5 shadow-warm mb-4">
+                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-3 bg-accent/50 text-accent-foreground">句子合并与重写</span>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          使用 {q.targetWords.map((tw, i) => (
+                            <span key={tw}>{i > 0 && " 和 "}<span className="font-bold text-primary">{tw}</span></span>
+                          ))} 将以下两句合并为一个英文长难句
+                        </p>
+                        <div className="space-y-2 mb-3">
+                          {q.chineseSentences.map((s, i) => (
+                            <div key={i} className="p-2.5 bg-muted/50 rounded-xl">
+                              <p className="text-sm text-foreground">{i + 1}. {s}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {q.hint && <p className="text-[10px] text-muted-foreground">💡 提示：{q.hint}</p>}
+                      </div>
+                      <textarea
+                        value={synthInput}
+                        onChange={(e) => setSynthInput(e.target.value)}
+                        placeholder="输入你的英文合并句…"
+                        disabled={synthRevealed}
+                        className="w-full bg-card rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground border outline-none focus:ring-2 focus:ring-primary/20 resize-none h-28 mb-3"
+                      />
+                      {synthRevealed && (
+                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-4 mb-4">
+                          <p className="text-xs text-muted-foreground mb-1.5">参考答案：</p>
+                          <p className="text-sm text-foreground leading-relaxed">{q.referenceSentence}</p>
+                        </motion.div>
+                      )}
+                      <div className="flex gap-2">
+                        {!synthRevealed ? (
+                          <button onClick={() => setSynthRevealed(true)} disabled={!synthInput.trim()} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                            <Eye className="h-4 w-4" /> 查看参考答案
+                          </button>
+                        ) : synthIdx < comboData.synthesisQuestions.length - 1 ? (
+                          <button onClick={() => { setSynthIdx(i => i + 1); setSynthInput(""); setSynthRevealed(false); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
+                        ) : (
+                          <button onClick={goNextComboPhase} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">查看总结 <Sparkles className="h-4 w-4" /></button>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground text-center mt-2">{synthIdx + 1}/{comboData.synthesisQuestions.length}</p>
                     </div>
                   );
                 })()}
