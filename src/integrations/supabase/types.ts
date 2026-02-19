@@ -67,6 +67,7 @@ export type Database = {
           created_at: string
           id: string
           lookup_count: number
+          mastery_level: number
           phonetic: string | null
           user_id: string
           word: string
@@ -76,6 +77,7 @@ export type Database = {
           created_at?: string
           id?: string
           lookup_count?: number
+          mastery_level?: number
           phonetic?: string | null
           user_id: string
           word: string
@@ -85,6 +87,7 @@ export type Database = {
           created_at?: string
           id?: string
           lookup_count?: number
+          mastery_level?: number
           phonetic?: string | null
           user_id?: string
           word?: string

@@ -11,6 +11,14 @@ type AppScenario = Database["public"]["Enums"]["app_scenario"];
 const scenarios: AppScenario[] = ["学术写作", "翻译练习", "日常口语", "专业课笔记"];
 const difficulties = ["基础", "进阶", "高级"];
 
+const MASTERY_LEVELS = [
+  { level: 1, label: "陌生", desc: "完全不认识", color: "bg-red-500", ring: "ring-red-400" },
+  { level: 2, label: "模糊", desc: "见过但想不起意思", color: "bg-orange-500", ring: "ring-orange-400" },
+  { level: 3, label: "认知", desc: "看到能想起意思，但不会用", color: "bg-yellow-500", ring: "ring-yellow-400" },
+  { level: 4, label: "运用", desc: "能在写作/口语中尝试使用", color: "bg-emerald-400", ring: "ring-emerald-300" },
+  { level: 5, label: "熟练", desc: "已内化为本能", color: "bg-emerald-600", ring: "ring-emerald-500" },
+];
+
 const TAG_CATEGORIES = [
   {
     label: "应用场景",
@@ -91,6 +99,7 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>(wordData.suggestedTags || []);
   const [difficulty, setDifficulty] = useState(wordData.difficulty || "进阶");
+  const [mastery, setMastery] = useState(1);
   const [saving, setSaving] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
@@ -158,6 +167,9 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
       // Extract source tags for source_text field
       const sourceTags = TAG_CATEGORIES.find(c => c.label === "来源")?.tags || [];
       const sourceFromTags = tags.filter(t => sourceTags.includes(t)).join("、");
+
+      // Update mastery_level on vocab_table
+      await supabase.from("vocab_table").update({ mastery_level: mastery }).eq("id", vocabId);
 
       const { error } = await supabase.from("corpus_entries").insert({
         user_id: user.id,
@@ -315,6 +327,24 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                 );
               })}
             </div>
+          </div>
+
+          {/* Mastery Level */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">掌握程度</label>
+            <div className="flex gap-1.5">
+              {MASTERY_LEVELS.map(m => (
+                <button
+                  key={m.level}
+                  onClick={() => setMastery(m.level)}
+                  className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all ring-1 ${mastery === m.level ? `${m.color} text-white ${m.ring}` : "bg-muted text-muted-foreground ring-transparent hover:ring-border"}`}
+                  title={m.desc}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">{MASTERY_LEVELS.find(m => m.level === mastery)?.desc}</p>
           </div>
 
           {/* Difficulty */}

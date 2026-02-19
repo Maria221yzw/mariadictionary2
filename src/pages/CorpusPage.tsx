@@ -17,8 +17,25 @@ interface CorpusEntry {
     word: string;
     phonetic: string | null;
     chinese_definition: string;
+    mastery_level: number;
   } | null;
 }
+
+const MASTERY_COLORS: Record<number, string> = {
+  1: "bg-red-500",
+  2: "bg-orange-500",
+  3: "bg-yellow-500",
+  4: "bg-emerald-400",
+  5: "bg-emerald-600",
+};
+
+const MASTERY_LABELS: Record<number, string> = {
+  1: "陌生",
+  2: "模糊",
+  3: "认知",
+  4: "运用",
+  5: "熟练",
+};
 
 const scenarioFilters = ["全部", "学术写作", "翻译练习", "日常口语", "专业课笔记"] as const;
 
@@ -39,7 +56,7 @@ export default function CorpusPage() {
 
     let query = supabase
       .from("corpus_entries")
-      .select("*, vocab_table(word, phonetic, chinese_definition)")
+      .select("*, vocab_table(word, phonetic, chinese_definition, mastery_level)")
       .order("created_at", { ascending: false });
 
     if (scenarioFilter !== "全部") {
@@ -133,14 +150,18 @@ export default function CorpusPage() {
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.97 }}
-                  className="bg-card rounded-xl p-4 shadow-warm"
+                  className="bg-card rounded-xl shadow-warm overflow-hidden flex"
                 >
+                  {/* Mastery color bar */}
+                  <div className={`w-1.5 shrink-0 ${MASTERY_COLORS[entry.vocab_table?.mastery_level ?? 1]}`} />
+                  <div className="p-4 flex-1 min-w-0">
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="text-base font-semibold text-foreground">{entry.vocab_table?.word}</h3>
                       <p className="text-sm text-muted-foreground">{entry.vocab_table?.chinese_definition}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground">{MASTERY_LABELS[entry.vocab_table?.mastery_level ?? 1]}</span>
                       <span className="tag-chip text-[10px]">{entry.application_scenario}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(entry.id); }}
@@ -163,6 +184,7 @@ export default function CorpusPage() {
                       ))}
                     </div>
                   )}
+                  </div>
                 </motion.div>
               ))}
             </AnimatePresence>
