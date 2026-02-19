@@ -75,9 +75,9 @@ serve(async (req) => {
   "synthesisQuestions": [
     {
       "targetWords": ["word1", "word2"],
-      "chineseSentences": ["中文简单句1", "中文简单句2"],
-      "referenceSentence": "使用目标词将两句合并后的英文长难句参考答案",
-      "hint": "简短的中文提示，引导用户如何合并（15字内）"
+      "chinesePrompt": "一个完整的中文长句（或两个逻辑紧密关联的短句），自然地包含所有目标词的语义。句子风格应符合学术写作或CATTI/专八翻译标准。",
+      "referenceSentence": "该中文句子的直接、忠实英文翻译，必须语义1:1对应，不得添加中文中没有的信息。目标词用**加粗**标记。",
+      "wordForms": [{"word": "monopoly", "formUsed": "monopoly (n.)", "roleInSentence": "作主语定语"}]
     }
   ],
   "summary": {
@@ -95,7 +95,14 @@ serve(async (req) => {
    - wordRelationships 必须解释每个词在上下文中的角色和逻辑关系
    - 示例：选中 inspiration 和 perilous → "The explorer's (1) journey through the desert became a great (2) to others." blanks: ["perilous", "inspiration"]
 2. nuanceQuestions：只在有近义词对时生成，最多2题。如无近义词返回空数组。两个对比句应形成一个对比场景
-3. synthesisQuestions：从选定单词中取2-3个词为一组，生成1道句子合并题。要求用户使用指定词合并重写为一个高级长难句。referenceSentence必须自然包含所有目标词
+3. synthesisQuestions（汉译英挑战）：
+   - 从选定单词中取2-3个词为一组，生成1道翻译题
+   - **中文先行**：先构思一个自然、地道的完整中文长句，确保该句子能自然容纳所有目标词的语义
+   - **忠实翻译**：referenceSentence 必须是 chinesePrompt 的直接忠实翻译，严禁添加中文中没有的信息
+   - **语义1:1对应**：中文说"垄断导致不稳定的定价"，英文就是"monopoly led to erratic pricing"，不得擅自加入"emergent market"等额外内容
+   - **学术风格**：句子应符合学术写作或CATTI/专八翻译考试标准
+   - **词性标注**：wordForms 数组标注每个目标词在参考答案中的实际词形和词性角色
+   - referenceSentence 中目标词用 **加粗** 标记（Markdown格式）
 4. summary：必须提供，分析词汇间的逻辑联系
 5. 只返回JSON，不要任何其他文字
 6. 不要生成 collocationQuestions（已移除该题型）`;

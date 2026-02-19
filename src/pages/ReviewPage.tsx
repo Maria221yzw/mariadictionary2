@@ -39,9 +39,11 @@ interface NuanceQuestion {
 // CollocationQuestion removed - no longer used in combo mode
 interface SynthesisQuestion {
   targetWords: string[];
-  chineseSentences: string[];
+  chinesePrompt?: string;
+  chineseSentences?: string[]; // legacy support
   referenceSentence: string;
-  hint: string;
+  hint?: string;
+  wordForms?: { word: string; formUsed: string; roleInSentence: string }[];
 }
 interface ComboData {
   narrativeCloze: NarrativeCloze;
@@ -693,47 +695,69 @@ export default function ReviewPage() {
 
             {/* COLLOCATION phase removed - replaced by integrated multi-word context */}
 
-            {/* SYNTHESIS */}
+            {/* SYNTHESIS - 汉译英挑战 */}
             {comboPhase === "synthesis" && comboData.synthesisQuestions && comboData.synthesisQuestions.length > 0 && (
               <motion.div key="synthesis" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
                 {(() => {
                   const q = comboData.synthesisQuestions[synthIdx];
                   if (!q) return null;
+                  // Support both new chinesePrompt and legacy chineseSentences
+                  const chineseText = q.chinesePrompt || (q.chineseSentences ? q.chineseSentences.join("；") : "");
+
+                  const renderReference = (text: string) => {
+                    const parts = text.split(/\*\*(.*?)\*\*/g);
+                    return parts.map((part, i) =>
+                      i % 2 === 1
+                        ? <span key={i} className="text-primary font-bold underline decoration-primary/40 underline-offset-2">{part}</span>
+                        : <span key={i}>{part}</span>
+                    );
+                  };
+
                   return (
                     <div>
                       <div className="bg-card rounded-2xl p-5 shadow-warm mb-4">
-                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-3 bg-accent/50 text-accent-foreground">句子合并与重写</span>
+                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-3 bg-accent/50 text-accent-foreground">汉译英挑战</span>
                         <p className="text-xs text-muted-foreground mb-3">
-                          使用 {q.targetWords.map((tw, i) => (
+                          请使用 {q.targetWords.map((tw, i) => (
                             <span key={tw}>{i > 0 && " 和 "}<span className="font-bold text-primary">{tw}</span></span>
-                          ))} 将以下两句合并为一个英文长难句
+                          ))} 将以下中文翻译为英文
                         </p>
-                        <div className="space-y-2 mb-3">
-                          {q.chineseSentences.map((s, i) => (
-                            <div key={i} className="p-2.5 bg-muted/50 rounded-xl">
-                              <p className="text-sm text-foreground">{i + 1}. {s}</p>
-                            </div>
-                          ))}
+                        <div className="p-3 bg-muted/50 rounded-xl">
+                          <p className="text-sm text-foreground leading-relaxed">{chineseText}</p>
                         </div>
-                        {q.hint && <p className="text-[10px] text-muted-foreground">💡 提示：{q.hint}</p>}
                       </div>
                       <textarea
                         value={synthInput}
                         onChange={(e) => setSynthInput(e.target.value)}
-                        placeholder="输入你的英文合并句…"
+                        placeholder="输入你的英文翻译…"
                         disabled={synthRevealed}
                         className="w-full bg-card rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground border outline-none focus:ring-2 focus:ring-primary/20 resize-none h-28 mb-3"
                       />
                       {synthRevealed && (
-                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-4 mb-4">
-                          <p className="text-xs text-muted-foreground mb-1.5">参考答案：</p>
-                          <p className="text-sm text-foreground leading-relaxed">{q.referenceSentence}</p>
+                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 mb-4">
+                          <div className="bg-primary/5 border border-primary/15 rounded-xl p-4">
+                            <p className="text-xs text-muted-foreground mb-1.5">参考译文：</p>
+                            <p className="text-sm text-foreground leading-relaxed">{renderReference(q.referenceSentence)}</p>
+                          </div>
+                          {q.wordForms && q.wordForms.length > 0 && (
+                            <div className="bg-muted/30 border border-border rounded-xl p-3">
+                              <p className="text-xs text-muted-foreground mb-2">📝 词性变形与角色：</p>
+                              <div className="space-y-1">
+                                {q.wordForms.map((wf, i) => (
+                                  <p key={i} className="text-xs text-foreground">
+                                    <span className="font-bold text-primary">{wf.word}</span>
+                                    <span className="text-muted-foreground"> → {wf.formUsed}，{wf.roleInSentence}</span>
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </motion.div>
                       )}
                       <div className="flex gap-2">
                         {!synthRevealed ? (
                           <button onClick={() => setSynthRevealed(true)} disabled={!synthInput.trim()} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
-                            <Eye className="h-4 w-4" /> 查看参考答案
+                            <Eye className="h-4 w-4" /> 查看参考译文
                           </button>
                         ) : synthIdx < comboData.synthesisQuestions.length - 1 ? (
                           <button onClick={() => { setSynthIdx(i => i + 1); setSynthInput(""); setSynthRevealed(false); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
