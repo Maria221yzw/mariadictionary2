@@ -460,17 +460,24 @@ export default function ReviewPage() {
                 <div className="space-y-2">
                   {filteredWords.map(v => {
                     const isChecked = selectedIds.has(v.id);
+                    const checkboxId = `word-check-${v.id}`;
                     return (
-                      <div key={v.id} className="group flex items-center gap-3 bg-card rounded-xl p-3 border border-border hover:border-muted-foreground/20 transition-colors">
-                        {/* Semi-transparent checkbox, visible on hover or when checked */}
-                        <div
-                          className={`shrink-0 transition-opacity ${isChecked ? "opacity-100" : "opacity-0 group-hover:opacity-60"}`}
-                          onClick={(e) => { e.stopPropagation(); toggleSelect(v.id); }}
-                        >
+                      <label
+                        key={v.id}
+                        htmlFor={checkboxId}
+                        className={`group flex items-center gap-3 bg-card rounded-xl p-3 border cursor-pointer select-text transition-all ${
+                          isChecked
+                            ? "border-primary/30 bg-primary/5"
+                            : "border-border hover:border-muted-foreground/30 hover:bg-muted/30"
+                        }`}
+                      >
+                        {/* Checkbox: semi-transparent until hover or checked */}
+                        <div className={`shrink-0 transition-opacity ${isChecked ? "opacity-100" : "opacity-30 group-hover:opacity-70"}`}>
                           <Checkbox
+                            id={checkboxId}
                             checked={isChecked}
                             onCheckedChange={() => toggleSelect(v.id)}
-                            className="h-4 w-4"
+                            className="h-4 w-4 pointer-events-auto"
                           />
                         </div>
                         <div className={`w-2 h-8 rounded-full shrink-0 ${MASTERY_COLORS[v.mastery_level]}`} />
@@ -479,7 +486,7 @@ export default function ReviewPage() {
                           <p className="text-xs text-muted-foreground line-clamp-1">{v.chinese_definition}</p>
                         </div>
                         {v.phonetic && <span className="text-[10px] text-muted-foreground">{v.phonetic}</span>}
-                      </div>
+                      </label>
                     );
                   })}
                   {filteredWords.length === 0 && (
