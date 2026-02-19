@@ -8,7 +8,7 @@ import SearchPage from "@/pages/SearchPage";
 import WordDetailPage from "@/pages/WordDetailPage";
 import CorpusPage from "@/pages/CorpusPage";
 import ReviewPage from "@/pages/ReviewPage";
-import ComboReviewPage from "@/pages/ComboReviewPage";
+
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
 
@@ -26,7 +26,7 @@ const App = () => (
             <Route path="/word/:word" element={<WordDetailPage />} />
             <Route path="/corpus" element={<CorpusPage />} />
             <Route path="/review" element={<ReviewPage />} />
-            <Route path="/combo-review" element={<ComboReviewPage />} />
+            
             <Route path="/auth" element={<AuthPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

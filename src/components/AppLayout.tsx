@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Search, Library, Sparkles, Layers, BookOpen, User, LogOut } from "lucide-react";
+import { Search, Library, Sparkles, BookOpen, User, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,6 @@ const navItems = [
   { path: "/", icon: Search, label: "搜索" },
   { path: "/corpus", icon: Library, label: "语料仓库" },
   { path: "/review", icon: Sparkles, label: "回顾" },
-  { path: "/combo-review", icon: Layers, label: "组合" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
