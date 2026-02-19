@@ -36,7 +36,15 @@ interface NuanceQuestion {
   explanationA: string; explanationB: string;
 }
 interface CollocationQuestion {
-  word: string; correctPrep: string; options: string[]; exampleSentence: string;
+  word: string;
+  collocationType: string;
+  prompt: string;
+  correctAnswer: string;
+  options: string[];
+  exampleSentence: string;
+  highlightWords?: string[];
+  // legacy support
+  correctPrep?: string;
 }
 interface SynthesisQuestion {
   targetWords: string[];
@@ -700,14 +708,20 @@ export default function ReviewPage() {
                   return (
                     <div>
                       <div className="bg-card rounded-2xl p-5 shadow-warm mb-4 text-center">
-                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-soft-rose/15 text-soft-rose">搭配匹配</span>
-                        <h3 className="text-2xl font-display font-bold text-foreground mb-2">{q.word} ___</h3>
+                        {q.collocationType && (
+                          <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-3 bg-muted text-muted-foreground">
+                            搭配挑战：{q.collocationType === "verb+noun" ? "动词 + 名词" : q.collocationType === "noun+prep" ? "名词 + 介词" : q.collocationType === "adj+noun" ? "形容词 + 名词" : q.collocationType === "verb+prep" ? "动词 + 介词" : "词组搭配"}
+                          </span>
+                        )}
+                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-soft-rose/15 text-soft-rose ml-1">搭配匹配</span>
+                        <h3 className="text-2xl font-display font-bold text-foreground mb-2">{q.prompt || `${q.word} ___`}</h3>
                         <p className="text-sm text-muted-foreground">选择正确的搭配词</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 mb-4">
                         {q.options.map(opt => {
                           const isSel = colAnswer === opt;
-                          const isRight = opt === q.correctPrep;
+                          const correct = q.correctAnswer || q.correctPrep || "";
+                          const isRight = opt === correct;
                           let cls = "p-3 rounded-xl text-sm font-medium border transition-all text-center ";
                           if (colRevealed) {
                             if (isRight) cls += "bg-primary/10 border-primary text-primary";
@@ -718,7 +732,7 @@ export default function ReviewPage() {
                           }
                           return (
                             <button key={opt} onClick={() => !colRevealed && setColAnswer(opt)} disabled={colRevealed} className={cls}>
-                              {q.word} {opt}
+                              {opt}
                               {colRevealed && isRight && <Check className="inline h-3.5 w-3.5 ml-1" />}
                               {colRevealed && isSel && !isRight && <X className="inline h-3.5 w-3.5 ml-1" />}
                             </button>
@@ -728,12 +742,25 @@ export default function ReviewPage() {
                       {colRevealed && (
                         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-3 mb-4">
                           <p className="text-xs text-muted-foreground mb-1">例句：</p>
-                          <p className="text-sm text-foreground">{q.exampleSentence}</p>
+                          <p className="text-sm text-foreground">
+                            {(() => {
+                              const sentence = q.exampleSentence || "";
+                              const highlights = q.highlightWords || [q.correctAnswer || q.correctPrep || ""];
+                              if (!highlights.length) return sentence;
+                              const pattern = highlights.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join("|");
+                              const parts = sentence.split(new RegExp(`(${pattern})`, "gi"));
+                              return parts.map((part, i) =>
+                                highlights.some(h => h.toLowerCase() === part.toLowerCase())
+                                  ? <strong key={i} className="text-primary font-semibold">{part}</strong>
+                                  : part
+                              );
+                            })()}
+                          </p>
                         </motion.div>
                       )}
                       <div className="flex gap-2">
                         {!colRevealed ? (
-                          <button onClick={() => { setColRevealed(true); setColResults(prev => ({ ...prev, [colIdx]: colAnswer === q.correctPrep })); }} disabled={!colAnswer} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认</button>
+                          <button onClick={() => { const correct = q.correctAnswer || q.correctPrep || ""; setColRevealed(true); setColResults(prev => ({ ...prev, [colIdx]: colAnswer === correct })); }} disabled={!colAnswer} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认</button>
                         ) : colIdx < comboData.collocationQuestions.length - 1 ? (
                           <button onClick={() => { setColIdx(i => i + 1); setColAnswer(null); setColRevealed(false); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
                         ) : (

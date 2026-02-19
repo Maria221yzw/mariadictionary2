@@ -69,9 +69,12 @@ serve(async (req) => {
   "collocationQuestions": [
     {
       "word": "目标单词",
-      "correctPrep": "正确的介词/搭配词",
-      "options": ["to", "with", "for", "into"],
-      "exampleSentence": "包含正确搭配的例句"
+      "collocationType": "verb+noun | noun+prep | adj+noun | verb+prep",
+      "prompt": "题面文字，空格用___标记。如：___ a concession 或 concession ___",
+      "correctAnswer": "正确的搭配词（如 make 或 to）",
+      "options": ["选项1", "选项2", "选项3", "选项4"],
+      "exampleSentence": "包含完整搭配的地道例句",
+      "highlightWords": ["需要加粗的搭配词1", "搭配词2"]
     }
   ],
   "synthesisQuestions": [
@@ -91,7 +94,13 @@ serve(async (req) => {
 规则：
 1. narrativeCloze: 短文需自然流畅，blanks 按出现顺序列出，distractors 增加2个同难度干扰词
 2. nuanceQuestions: 只在有近义词对时生成，最多2题。如无近义词可返回空数组
-3. collocationQuestions: 每个选定单词生成一道搭配题，options包含4个选项
+3. collocationQuestions: 每个选定单词生成一道搭配题。严格遵循以下规则：
+   a) collocationType 必须从 "verb+noun"、"noun+prep"、"adj+noun"、"verb+prep" 中选择
+   b) 语序必须正确：verb+noun 类型空格在名词前（如 "___ a concession"）；noun+prep 类型空格在名词后（如 "concession ___"）；adj+noun 类型空格在名词前（如 "___ impact"）；verb+prep 类型空格在动词后（如 "adhere ___"）
+   c) 严禁出现名词在前、动词在后的倒序表达（如 "concession make" 是绝对禁止的）
+   d) options 必须包含4个同类词（全是介词或全是动词），具有迷惑性但逻辑清晰
+   e) exampleSentence 必须是地道的英文句子，highlightWords 列出需要高亮的搭配词组
+   f) 搭配必须参考《牛津英语搭配词典》等权威语料标准，确保准确无误
 4. synthesisQuestions: 从选定单词中取2个词为一组，生成1-2道句子合并题。给出两个简短中文句子，要求用户使用指定的两个英文单词合并重写为一个高级长难句。referenceSentence必须自然地包含这两个目标词
 5. summary: 必须提供，分析词汇间的逻辑联系
 6. 只返回JSON，不要任何其他文字`;
