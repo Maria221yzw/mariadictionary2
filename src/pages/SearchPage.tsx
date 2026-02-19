@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ArrowRight, Bookmark, AlertTriangle, TrendingUp, Loader2, Trash2, Clock } from "lucide-react";
+import { Search, ArrowRight, Bookmark, AlertTriangle, Loader2, Trash2, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -148,42 +148,6 @@ export default function SearchPage() {
     }
   };
 
-  // Daily word - deterministic pick based on date
-  const dailyWords = [
-    { word: "Inevitable", pos: "adj.", meaningCn: "不可避免的" },
-    { word: "Fluctuate", pos: "v.", meaningCn: "波动；起伏不定" },
-    { word: "Predominant", pos: "adj.", meaningCn: "主要的；占优势的" },
-    { word: "Deteriorate", pos: "v.", meaningCn: "恶化；变坏" },
-    { word: "Comprehensive", pos: "adj.", meaningCn: "全面的；综合的" },
-    { word: "Implement", pos: "v.", meaningCn: "实施；执行" },
-    { word: "Subsequent", pos: "adj.", meaningCn: "随后的；后来的" },
-    { word: "Adequate", pos: "adj.", meaningCn: "充足的；适当的" },
-    { word: "Diminish", pos: "v.", meaningCn: "减少；削弱" },
-    { word: "Facilitate", pos: "v.", meaningCn: "促进；使便利" },
-    { word: "Inherent", pos: "adj.", meaningCn: "固有的；内在的" },
-    { word: "Paradigm", pos: "n.", meaningCn: "范式；典范" },
-    { word: "Resilient", pos: "adj.", meaningCn: "有弹性的；适应力强的" },
-    { word: "Ambiguous", pos: "adj.", meaningCn: "模棱两可的；含糊的" },
-    { word: "Pragmatic", pos: "adj.", meaningCn: "务实的；实用主义的" },
-    { word: "Unprecedented", pos: "adj.", meaningCn: "史无前例的" },
-    { word: "Tangible", pos: "adj.", meaningCn: "有形的；切实的" },
-    { word: "Scrutinize", pos: "v.", meaningCn: "仔细检查；审视" },
-    { word: "Plausible", pos: "adj.", meaningCn: "貌似合理的" },
-    { word: "Exacerbate", pos: "v.", meaningCn: "使恶化；加剧" },
-    { word: "Benevolent", pos: "adj.", meaningCn: "仁慈的；慈善的" },
-    { word: "Redundant", pos: "adj.", meaningCn: "多余的；冗余的" },
-    { word: "Elicit", pos: "v.", meaningCn: "引出；诱出" },
-    { word: "Substantiate", pos: "v.", meaningCn: "证实；证明" },
-    { word: "Volatile", pos: "adj.", meaningCn: "易变的；不稳定的" },
-    { word: "Pervasive", pos: "adj.", meaningCn: "普遍的；弥漫的" },
-    { word: "Alleviate", pos: "v.", meaningCn: "减轻；缓解" },
-    { word: "Succinct", pos: "adj.", meaningCn: "简洁的；简明的" },
-    { word: "Mitigate", pos: "v.", meaningCn: "减轻；缓和" },
-    { word: "Conducive", pos: "adj.", meaningCn: "有助于的；有益的" },
-  ];
-  const dayIndex = Math.floor(Date.now() / 86400000) % dailyWords.length;
-  const dailyWord = dailyWords[dayIndex];
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-65px)] px-4 pb-20">
       <motion.div
@@ -221,25 +185,6 @@ export default function SearchPage() {
             </button>
           </div>
         </div>
-
-        {/* Daily word */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8"
-        >
-          <button
-            onClick={() => { setQuery(dailyWord.word); handleSearch(dailyWord.word); }}
-            className="inline-flex items-center gap-2.5 bg-card rounded-xl px-5 py-3 shadow-warm hover:shadow-warm-lg transition-shadow cursor-pointer"
-          >
-            <TrendingUp className="h-4 w-4 text-primary shrink-0" />
-            <span className="text-xs text-muted-foreground">每日一词</span>
-            <span className="text-sm font-semibold text-foreground">{dailyWord.word}</span>
-            <span className="text-xs text-primary/70">{dailyWord.pos}</span>
-            <span className="text-xs text-muted-foreground">{dailyWord.meaningCn}</span>
-          </button>
-        </motion.div>
 
         {/* Translation History */}
         {!wordData && !loading && history.length > 0 && (
