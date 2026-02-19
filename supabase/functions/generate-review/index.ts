@@ -33,10 +33,11 @@ serve(async (req) => {
       });
     }
 
-    // Fetch user's vocab
+    // Fetch user's vocab, prioritize low mastery
     const { data: vocab, error: vocabError } = await supabase
       .from("vocab_table")
-      .select("word, chinese_definition, phonetic")
+      .select("id, word, chinese_definition, phonetic, mastery_level")
+      .order("mastery_level", { ascending: true })
       .limit(50);
 
     if (vocabError) {
@@ -48,49 +49,64 @@ serve(async (req) => {
     }
 
     if (!vocab || vocab.length === 0) {
-      return new Response(JSON.stringify({ questions: [], empty: true }), {
+      return new Response(JSON.stringify({ words: [], empty: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Pick up to 6 random words
-    const shuffled = [...vocab].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, Math.min(6, shuffled.length));
+    // Prioritize mastery_level < 4, then fill with others
+    const lowMastery = vocab.filter(w => w.mastery_level < 4);
+    const highMastery = vocab.filter(w => w.mastery_level >= 4);
+    const pool = [...lowMastery.sort(() => Math.random() - 0.5), ...highMastery.sort(() => Math.random() - 0.5)];
+    const selected = pool.slice(0, Math.min(6, pool.length));
 
     const wordList = selected.map(w => `${w.word} (${w.chinese_definition})`).join("\n");
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const systemPrompt = `你是英语练习题生成器。根据用户提供的单词列表，为每个单词生成一道练习题。
+    const systemPrompt = `你是英语三阶段复习题生成器。对于每个单词，你需要生成三道递进式题目：
 
-题目类型交替使用：
-- fill-blank（选词填空）：给出一个英文句子，其中正确答案的位置用 ___ 表示。提供4个选项（含正确答案和3个同难度干扰项）。
-- translate（场景翻译）：给出一个中文句子，要求用户翻译成英文，翻译中需用到该单词。提供参考答案。
+**第一步：释义识别 (recognition)**
+- 显示英文单词，让用户从4个中文释义中选出正确答案
+- 3个干扰项应是含义相近但不同的中文释义
 
-返回 JSON 数组，格式：
+**第二步：语境填空 (application)**  
+- 给出一个地道的英文句子，目标单词位置用 ___ 表示
+- 提供4个选项（含正确答案和3个词性/拼写相似的干扰词）
+- 句子要体现该词的典型搭配
+
+**第三步：汉译英 (production)**
+- 给出一个中文句子，用户需翻译成包含目标单词的英文句子
+- 提供参考答案，并标注目标单词在句中的位置（用 **word** 加粗标记）
+
+返回 JSON 数组，每个元素代表一个单词的三步题目：
 [
   {
-    "type": "fill-blank",
-    "prompt": "The policy aims to ___ the crisis.",
-    "answer": "ameliorate",
-    "options": ["ameliorate", "deteriorate", "exaggerate", "elaborate"],
-    "relatedWord": "Ameliorate"
-  },
-  {
-    "type": "translate",
-    "prompt": "请翻译：社区项目有助于缓解城市贫困。",
-    "answer": "Community programs help alleviate urban poverty.",
-    "relatedWord": "Alleviate"
+    "word": "ameliorate",
+    "wordCn": "改善，改进",
+    "step1": {
+      "options": ["改善，改进", "恶化，退化", "夸大，夸张", "阐述，详述"],
+      "answer": "改善，改进"
+    },
+    "step2": {
+      "prompt": "The new policy aims to ___ living conditions in rural areas.",
+      "options": ["ameliorate", "deteriorate", "exaggerate", "elaborate"],
+      "answer": "ameliorate"
+    },
+    "step3": {
+      "promptCn": "政府正在采取措施改善农村地区的医疗条件。",
+      "answer": "The government is taking measures to **ameliorate** healthcare conditions in rural areas."
+    }
   }
 ]
 
 规则：
-1. 每个单词恰好生成一道题
-2. fill-blank 和 translate 交替出现
-3. 干扰项必须是真实英文单词，且词性与正确答案一致
-4. 句子要地道自然
-5. 只返回 JSON 数组，不要其他文字`;
+1. 每个单词恰好生成一组三步题
+2. 干扰项必须是真实词汇/释义，难度相当
+3. 句子要地道自然，体现真实语境
+4. 只返回 JSON 数组，不要其他文字
+5. step3 的 answer 中用 **word** 标记目标单词`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -99,19 +115,29 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `请为以下单词生成练习题：\n${wordList}` },
+          { role: "user", content: `请为以下单词生成三阶段复习题：\n${wordList}` },
         ],
       }),
     });
 
     if (!response.ok) {
-      console.error("AI gateway error:", response.status);
+      const status = response.status;
+      console.error("AI gateway error:", status);
+      if (status === 429) {
+        return new Response(JSON.stringify({ error: "请求过于频繁，请稍后再试" }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (status === 402) {
+        return new Response(JSON.stringify({ error: "AI 额度不足，请充值" }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: "AI 服务暂时不可用" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -122,15 +148,19 @@ serve(async (req) => {
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) jsonStr = jsonMatch[1];
 
-    const questions = JSON.parse(jsonStr.trim());
+    const words = JSON.parse(jsonStr.trim());
 
-    // Add ids
-    const withIds = questions.map((q: Record<string, unknown>, i: number) => ({
-      ...q,
-      id: `r${i + 1}`,
-    }));
+    // Attach vocab ids for mastery update
+    const wordsWithIds = words.map((w: any) => {
+      const match = selected.find(s => s.word.toLowerCase() === w.word.toLowerCase());
+      return {
+        ...w,
+        vocabId: match?.id || null,
+        masteryLevel: match?.mastery_level || 1,
+      };
+    });
 
-    return new Response(JSON.stringify({ questions: withIds, empty: false }), {
+    return new Response(JSON.stringify({ words: wordsWithIds, empty: false }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
