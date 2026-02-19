@@ -46,15 +46,21 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const systemPrompt = `你是一个高级英语组合记忆练习生成器，专为雅思/专八考生设计。用户会提供一组 2-5 个单词，你需要生成四类题目和一份总结。
+    const systemPrompt = `你是一个高级英语组合记忆练习生成器，专为雅思/专八考生设计。用户会提供一组 2-5 个单词，你需要生成**真正的多词联动题目**。
+
+核心原则：
+- **严禁** 为每个单词单独出一道独立题目再依次循环！这不是联动！
+- 所有题型都必须在同一个语境中同时考查全部选中的单词
+- 题目必须体现单词之间的语义关系（因果、对比、递进、并列等）
 
 所有返回必须为严格 JSON，格式如下：
 
 {
   "narrativeCloze": {
-    "passage": "一段50-100词的连贯英文短文（新闻/学术/商务风格），目标词位置用 (1), (2), (3)... 标记",
+    "passage": "一段80-120词的连贯英文短文（新闻/学术/商务风格），所有选中单词（或其派生词形式）必须全部出现在这一段中，并全部挖空。用 (1), (2), (3)... 按出现顺序标记空格位置。",
     "blanks": ["word1", "word2", "word3"],
-    "distractors": ["distractor1", "distractor2"]
+    "distractors": ["distractor1", "distractor2"],
+    "wordRelationships": "50-80字中文说明：解释这几个词在本文中的逻辑关系（如因果、递进、对比），以及为什么每个词填在对应的位置。"
   },
   "nuanceQuestions": [
     {
@@ -64,17 +70,6 @@ serve(async (req) => {
       "wordB": "适合句子B的词",
       "explanationA": "为什么wordA更适合A（中文，20字内）",
       "explanationB": "为什么wordB更适合B（中文，20字内）"
-    }
-  ],
-  "collocationQuestions": [
-    {
-      "word": "目标单词",
-      "collocationType": "verb+noun | noun+prep | adj+noun | verb+prep",
-      "prompt": "题面文字，空格用___标记。如：___ a concession 或 concession ___",
-      "correctAnswer": "正确的搭配词（如 make 或 to）",
-      "options": ["选项1", "选项2", "选项3", "选项4"],
-      "exampleSentence": "包含完整搭配的地道例句",
-      "highlightWords": ["需要加粗的搭配词1", "搭配词2"]
     }
   ],
   "synthesisQuestions": [
@@ -92,18 +87,18 @@ serve(async (req) => {
 }
 
 规则：
-1. narrativeCloze: 短文需自然流畅，blanks 按出现顺序列出，distractors 增加2个同难度干扰词
-2. nuanceQuestions: 只在有近义词对时生成，最多2题。如无近义词可返回空数组
-3. collocationQuestions: 每个选定单词生成一道搭配题。严格遵循以下规则：
-   a) collocationType 必须从 "verb+noun"、"noun+prep"、"adj+noun"、"verb+prep" 中选择
-   b) 语序必须正确：verb+noun 类型空格在名词前（如 "___ a concession"）；noun+prep 类型空格在名词后（如 "concession ___"）；adj+noun 类型空格在名词前（如 "___ impact"）；verb+prep 类型空格在动词后（如 "adhere ___"）
-   c) 严禁出现名词在前、动词在后的倒序表达（如 "concession make" 是绝对禁止的）
-   d) options 必须包含4个同类词（全是介词或全是动词），具有迷惑性但逻辑清晰
-   e) exampleSentence 必须是地道的英文句子，highlightWords 列出需要高亮的搭配词组
-   f) 搭配必须参考《牛津英语搭配词典》等权威语料标准，确保准确无误
-4. synthesisQuestions: 从选定单词中取2个词为一组，生成1-2道句子合并题。给出两个简短中文句子，要求用户使用指定的两个英文单词合并重写为一个高级长难句。referenceSentence必须自然地包含这两个目标词
-5. summary: 必须提供，分析词汇间的逻辑联系
-6. 只返回JSON，不要任何其他文字`;
+1. narrativeCloze（核心题型）：
+   - 必须编写一个连贯的短文或复杂长难句，80-120词
+   - 选中的全部 2-5 个单词必须同时出现在这一个段落中，全部挖空
+   - blanks 按出现顺序列出（与 (1)(2)(3) 对应）
+   - distractors 增加2-3个同难度干扰词，确保迷惑性
+   - wordRelationships 必须解释每个词在上下文中的角色和逻辑关系
+   - 示例：选中 inspiration 和 perilous → "The explorer's (1) journey through the desert became a great (2) to others." blanks: ["perilous", "inspiration"]
+2. nuanceQuestions：只在有近义词对时生成，最多2题。如无近义词返回空数组。两个对比句应形成一个对比场景
+3. synthesisQuestions：从选定单词中取2-3个词为一组，生成1道句子合并题。要求用户使用指定词合并重写为一个高级长难句。referenceSentence必须自然包含所有目标词
+4. summary：必须提供，分析词汇间的逻辑联系
+5. 只返回JSON，不要任何其他文字
+6. 不要生成 collocationQuestions（已移除该题型）`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

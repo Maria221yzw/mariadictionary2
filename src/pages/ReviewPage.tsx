@@ -29,23 +29,14 @@ interface NarrativeCloze {
   passage: string;
   blanks: string[];
   distractors: string[];
+  wordRelationships?: string;
 }
 interface NuanceQuestion {
   sentenceA: string; sentenceB: string;
   wordA: string; wordB: string;
   explanationA: string; explanationB: string;
 }
-interface CollocationQuestion {
-  word: string;
-  collocationType: string;
-  prompt: string;
-  correctAnswer: string;
-  options: string[];
-  exampleSentence: string;
-  highlightWords?: string[];
-  // legacy support
-  correctPrep?: string;
-}
+// CollocationQuestion removed - no longer used in combo mode
 interface SynthesisQuestion {
   targetWords: string[];
   chineseSentences: string[];
@@ -55,7 +46,6 @@ interface SynthesisQuestion {
 interface ComboData {
   narrativeCloze: NarrativeCloze;
   nuanceQuestions: NuanceQuestion[];
-  collocationQuestions: CollocationQuestion[];
   synthesisQuestions: SynthesisQuestion[];
   summary: { relationship: string; explanation: string };
 }
@@ -78,10 +68,10 @@ const MASTERY_LABELS: Record<number, string> = {
 };
 
 type PageMode = "dashboard" | "review" | "combo";
-type ComboPhase = "narrative" | "nuance" | "collocation" | "synthesis" | "summary";
+type ComboPhase = "narrative" | "nuance" | "synthesis" | "summary";
 
 const COMBO_PHASE_LABELS: Record<ComboPhase, string> = {
-  narrative: "叙事填空", nuance: "近义辨析", collocation: "搭配匹配", synthesis: "句子重写", summary: "AI 总结",
+  narrative: "综合填空", nuance: "近义辨析", synthesis: "句子重写", summary: "AI 总结",
 };
 
 export default function ReviewPage() {
@@ -116,10 +106,7 @@ export default function ReviewPage() {
   const [nuanceIdx, setNuanceIdx] = useState(0);
   const [nuanceAnswers, setNuanceAnswers] = useState<Record<string, { a: string; b: string }>>({});
   const [nuanceRevealed, setNuanceRevealed] = useState(false);
-  const [colIdx, setColIdx] = useState(0);
-  const [colAnswer, setColAnswer] = useState<string | null>(null);
-  const [colRevealed, setColRevealed] = useState(false);
-  const [colResults, setColResults] = useState<Record<number, boolean>>({});
+  // collocation state removed
   const [synthIdx, setSynthIdx] = useState(0);
   const [synthInput, setSynthInput] = useState("");
   const [synthRevealed, setSynthRevealed] = useState(false);
@@ -281,17 +268,16 @@ export default function ReviewPage() {
     setComboData(null);
     setNarrativeAnswers({}); setNarrativeRevealed(false);
     setNuanceIdx(0); setNuanceAnswers({}); setNuanceRevealed(false);
-    setColIdx(0); setColAnswer(null); setColRevealed(false); setColResults({});
     setSynthIdx(0); setSynthInput(""); setSynthRevealed(false);
   };
 
   const comboPhases: ComboPhase[] = comboData
-    ? (["narrative", "nuance", "collocation", "synthesis", "summary"] as ComboPhase[]).filter(p => {
+    ? (["narrative", "nuance", "synthesis", "summary"] as ComboPhase[]).filter(p => {
         if (p === "nuance" && (!comboData.nuanceQuestions || comboData.nuanceQuestions.length === 0)) return false;
         if (p === "synthesis" && (!comboData.synthesisQuestions || comboData.synthesisQuestions.length === 0)) return false;
         return true;
       })
-    : ["narrative", "nuance", "collocation", "synthesis", "summary"];
+    : ["narrative", "nuance", "synthesis", "summary"];
 
   const comboProgressPercent = ((comboPhases.indexOf(comboPhase) + 1) / comboPhases.length) * 100;
 
@@ -637,6 +623,12 @@ export default function ReviewPage() {
                 {!narrativeRevealed && Object.keys(narrativeAnswers).length > 0 && (
                   <button onClick={() => setNarrativeAnswers({})} className="text-xs text-muted-foreground hover:text-foreground mb-3 underline">重置选择</button>
                 )}
+                {narrativeRevealed && comboData.narrativeCloze.wordRelationships && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-4 mb-4">
+                    <p className="text-xs font-medium text-primary mb-1.5">🔗 词汇逻辑关系</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{comboData.narrativeCloze.wordRelationships}</p>
+                  </motion.div>
+                )}
                 <div className="flex gap-2">
                   {!narrativeRevealed ? (
                     <button onClick={() => setNarrativeRevealed(true)} disabled={Object.keys(narrativeAnswers).length < comboData.narrativeCloze.blanks.length} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">检查答案</button>
@@ -699,80 +691,7 @@ export default function ReviewPage() {
               </motion.div>
             )}
 
-            {/* COLLOCATION */}
-            {comboPhase === "collocation" && (
-              <motion.div key="collocation" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
-                {(() => {
-                  const q = comboData.collocationQuestions[colIdx];
-                  if (!q) return null;
-                  return (
-                    <div>
-                      <div className="bg-card rounded-2xl p-5 shadow-warm mb-4 text-center">
-                        {q.collocationType && (
-                          <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-3 bg-muted text-muted-foreground">
-                            搭配挑战：{q.collocationType === "verb+noun" ? "动词 + 名词" : q.collocationType === "noun+prep" ? "名词 + 介词" : q.collocationType === "adj+noun" ? "形容词 + 名词" : q.collocationType === "verb+prep" ? "动词 + 介词" : "词组搭配"}
-                          </span>
-                        )}
-                        <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-soft-rose/15 text-soft-rose ml-1">搭配匹配</span>
-                        <h3 className="text-2xl font-display font-bold text-foreground mb-2">{q.prompt || `${q.word} ___`}</h3>
-                        <p className="text-sm text-muted-foreground">选择正确的搭配词</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 mb-4">
-                        {q.options.map(opt => {
-                          const isSel = colAnswer === opt;
-                          const correct = q.correctAnswer || q.correctPrep || "";
-                          const isRight = opt === correct;
-                          let cls = "p-3 rounded-xl text-sm font-medium border transition-all text-center ";
-                          if (colRevealed) {
-                            if (isRight) cls += "bg-primary/10 border-primary text-primary";
-                            else if (isSel && !isRight) cls += "bg-destructive/10 border-destructive text-destructive";
-                            else cls += "bg-muted border-transparent text-muted-foreground";
-                          } else {
-                            cls += isSel ? "bg-primary/10 border-primary text-primary" : "bg-card border-border text-foreground hover:border-primary/30";
-                          }
-                          return (
-                            <button key={opt} onClick={() => !colRevealed && setColAnswer(opt)} disabled={colRevealed} className={cls}>
-                              {opt}
-                              {colRevealed && isRight && <Check className="inline h-3.5 w-3.5 ml-1" />}
-                              {colRevealed && isSel && !isRight && <X className="inline h-3.5 w-3.5 ml-1" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {colRevealed && (
-                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-3 mb-4">
-                          <p className="text-xs text-muted-foreground mb-1">例句：</p>
-                          <p className="text-sm text-foreground">
-                            {(() => {
-                              const sentence = q.exampleSentence || "";
-                              const highlights = q.highlightWords || [q.correctAnswer || q.correctPrep || ""];
-                              if (!highlights.length) return sentence;
-                              const pattern = highlights.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join("|");
-                              const parts = sentence.split(new RegExp(`(${pattern})`, "gi"));
-                              return parts.map((part, i) =>
-                                highlights.some(h => h.toLowerCase() === part.toLowerCase())
-                                  ? <strong key={i} className="text-primary font-semibold">{part}</strong>
-                                  : part
-                              );
-                            })()}
-                          </p>
-                        </motion.div>
-                      )}
-                      <div className="flex gap-2">
-                        {!colRevealed ? (
-                          <button onClick={() => { const correct = q.correctAnswer || q.correctPrep || ""; setColRevealed(true); setColResults(prev => ({ ...prev, [colIdx]: colAnswer === correct })); }} disabled={!colAnswer} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认</button>
-                        ) : colIdx < comboData.collocationQuestions.length - 1 ? (
-                          <button onClick={() => { setColIdx(i => i + 1); setColAnswer(null); setColRevealed(false); }} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">下一题 <ArrowRight className="h-4 w-4" /></button>
-                        ) : (
-                          <button onClick={goNextComboPhase} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">查看总结 <Sparkles className="h-4 w-4" /></button>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground text-center mt-2">{colIdx + 1}/{comboData.collocationQuestions.length}</p>
-                    </div>
-                  );
-                })()}
-              </motion.div>
-            )}
+            {/* COLLOCATION phase removed - replaced by integrated multi-word context */}
 
             {/* SYNTHESIS */}
             {comboPhase === "synthesis" && comboData.synthesisQuestions && comboData.synthesisQuestions.length > 0 && (
