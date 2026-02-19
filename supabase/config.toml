@@ -2,3 +2,6 @@ project_id = "tpewdvwddtlfpczusxml"
 
 [functions.word-expand]
 verify_jwt = false
+
+[functions.generate-combo-review]
+verify_jwt = false
