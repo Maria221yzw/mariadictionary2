@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -115,6 +115,7 @@ export default function ReviewPage() {
   const [synthIdx, setSynthIdx] = useState(0);
   const [synthInput, setSynthInput] = useState("");
   const [synthRevealed, setSynthRevealed] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("review_onboarding_seen"));
 
   // Fetch vocab
   const refreshVocab = useCallback(async () => {
@@ -372,27 +373,74 @@ export default function ReviewPage() {
             </button>
           </div>
 
-          {/* Action buttons */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          {/* Mode Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+            {/* Mode A: Individual Mastery */}
             <button
-              onClick={startReview}
-              disabled={loadingReview || (masteryStats[1] + masteryStats[2]) === 0}
-              className="py-3.5 rounded-xl bg-red-500/10 text-red-500 text-sm font-medium hover:bg-red-500/15 transition-colors disabled:opacity-40 flex flex-col items-center gap-1"
+              onClick={() => {
+                if (selectedIds.size <= 1) startReview();
+                else startReview();
+              }}
+              disabled={loadingReview || allVocab.length === 0}
+              className="group relative flex flex-col items-start p-4 rounded-2xl border border-border bg-card hover:border-primary/30 hover:shadow-md transition-all text-left disabled:opacity-40"
             >
-              {loadingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-              <span>回顾全部生词</span>
-              <span className="text-[10px] opacity-70">L1-L2 · {masteryStats[1] + masteryStats[2]} 词</span>
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+                {loadingReview ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Target className="h-5 w-5 text-primary" />}
+              </div>
+              <h3 className="text-sm font-bold text-foreground mb-1">单词强化</h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">逐一攻克，深度记忆每个词的词性变形与翻译。</p>
+              <span className="mt-2 text-[10px] text-muted-foreground/70">
+                {selectedIds.size === 1 ? "将针对选中的 1 个词练习" : selectedIds.size > 1 ? `将针对选中的 ${selectedIds.size} 个词练习` : `默认回顾当前等级生词`}
+              </span>
             </button>
+
+            {/* Mode B: Combined Synergy */}
             <button
-              onClick={startReview}
-              disabled={loadingReview || (masteryStats[3] + masteryStats[4]) === 0}
-              className="py-3.5 rounded-xl bg-yellow-500/10 text-yellow-600 text-sm font-medium hover:bg-yellow-500/15 transition-colors disabled:opacity-40 flex flex-col items-center gap-1"
+              onClick={() => {
+                if (selectedIds.size >= 2) startComboReview();
+                else toast("请先在下方勾选 2-5 个单词", { icon: "💡" });
+              }}
+              disabled={generatingCombo || (selectedIds.size >= 1 && selectedIds.size < 2)}
+              className={`group relative flex flex-col items-start p-4 rounded-2xl border transition-all text-left ${
+                selectedIds.size >= 2
+                  ? "border-primary/30 bg-primary/5 hover:shadow-md hover:border-primary/50"
+                  : "border-border bg-card opacity-60"
+              } disabled:opacity-40`}
             >
-              {loadingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              <span>针对性强化</span>
-              <span className="text-[10px] opacity-70">L3-L4 · {masteryStats[3] + masteryStats[4]} 词</span>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${selectedIds.size >= 2 ? "bg-primary/15" : "bg-muted"}`}>
+                {generatingCombo ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Link2 className={`h-5 w-5 ${selectedIds.size >= 2 ? "text-primary" : "text-muted-foreground"}`} />}
+              </div>
+              <h3 className="text-sm font-bold text-foreground mb-1">组合联动</h3>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">多词关联，通过综合填空与辨析考察词组运用。</p>
+              <span className="mt-2 text-[10px] text-muted-foreground/70">
+                {selectedIds.size >= 2 ? `已选 ${selectedIds.size} 词，点击开始` : "需勾选 2-5 个单词"}
+              </span>
             </button>
           </div>
+
+          {/* Onboarding tooltip */}
+          <AnimatePresence>
+            {showOnboarding && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="mb-5 bg-primary/5 border border-primary/15 rounded-xl p-3 flex items-start gap-2.5"
+              >
+                <Lightbulb className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs text-foreground font-medium">想要组合练习？</p>
+                  <p className="text-[11px] text-muted-foreground">先在下方展开某个等级，勾选 2 个以上的单词，即可解锁「组合联动」模式！</p>
+                </div>
+                <button
+                  onClick={() => { setShowOnboarding(false); localStorage.setItem("review_onboarding_seen", "1"); }}
+                  className="text-xs text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  知道了
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Word list for selected mastery level */}
           <AnimatePresence>
@@ -471,7 +519,7 @@ export default function ReviewPage() {
           )}
         </AnimatePresence>
 
-        {/* Floating action bar */}
+        {/* Floating selection indicator */}
         <AnimatePresence>
           {selectedIds.size > 0 && (
             <motion.div
@@ -479,19 +527,14 @@ export default function ReviewPage() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 80, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-              className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-card border border-border shadow-lg rounded-2xl px-5 py-3 flex items-center gap-4"
+              className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-card border border-border shadow-lg rounded-2xl px-5 py-3 flex items-center gap-3"
             >
               <span className="text-sm text-foreground font-medium whitespace-nowrap">
                 已选择 <span className="text-primary font-bold">{selectedIds.size}</span> 个单词
               </span>
-              <button
-                onClick={startComboReview}
-                disabled={selectedIds.size < 2 || generatingCombo}
-                className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
-              >
-                {generatingCombo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Layers className="h-3.5 w-3.5" />}
-                开始组合特训
-              </button>
+              <span className="text-[10px] text-muted-foreground">
+                {selectedIds.size >= 2 ? "可使用组合联动" : "再选 1 个可组合"}
+              </span>
               <button
                 onClick={() => setSelectedIds(new Set())}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
