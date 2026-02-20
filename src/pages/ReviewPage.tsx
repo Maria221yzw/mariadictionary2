@@ -48,6 +48,16 @@ const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
   paraphrasing: "摘要重构",
   register_flip: "语域转换",
   nuance_distinction: "近义微观辨析",
+  // Professional step types
+  business_sense: "商务义项辨析",
+  email_phrasing: "邮件填空",
+  professional_collocation: "专业搭配",
+  politeness_paraphrasing: "委婉化改写",
+  conflict_deescalation: "冲突化解",
+  scenario_response: "职场情境应对",
+  negotiation_scripting: "谈判博弈模拟",
+  visionary_leadership: "领导力演说",
+  idiomatic_business: "商务隐喻",
 };
 
 // ===== Interfaces =====
