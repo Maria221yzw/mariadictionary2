@@ -4,6 +4,7 @@ import { Library, Search, Trash2, Loader2, ChevronDown, ChevronRight } from "luc
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import CorpusWordModal from "@/components/CorpusWordModal";
 
 interface CorpusEntry {
   id: string;
@@ -60,6 +61,7 @@ export default function CorpusPage() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSubTag, setActiveSubTag] = useState<string | null>(null);
+  const [modalWord, setModalWord] = useState<{ word: string; vocabId: string; tags?: string[] } | null>(null);
   const navigate = useNavigate();
 
   const fetchEntries = async () => {
@@ -265,7 +267,16 @@ export default function CorpusPage() {
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.97 }}
-                  className="bg-card rounded-xl shadow-warm overflow-hidden border border-border"
+                  className="bg-card rounded-xl shadow-warm overflow-hidden border border-border cursor-pointer hover:border-primary/30 hover:bg-muted/30 transition-all"
+                  onClick={() => {
+                    if (entry.vocab_table) {
+                      setModalWord({
+                        word: entry.vocab_table.word,
+                        vocabId: entry.vocab_table.id,
+                        tags: entry.custom_tags || [],
+                      });
+                    }
+                  }}
                 >
                   <div className="p-4">
                     <div className="flex items-start justify-between">
@@ -307,6 +318,20 @@ export default function CorpusPage() {
           </div>
         )}
       </motion.div>
+
+      {/* Word detail modal */}
+      {modalWord && (
+        <CorpusWordModal
+          word={modalWord.word}
+          vocabId={modalWord.vocabId}
+          corpusTags={modalWord.tags}
+          onClose={() => setModalWord(null)}
+          onSearchWord={(w) => {
+            setModalWord(null);
+            navigate(`/word/${encodeURIComponent(w.toLowerCase())}`);
+          }}
+        />
+      )}
     </div>
   );
 }
