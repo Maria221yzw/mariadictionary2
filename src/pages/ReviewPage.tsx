@@ -266,6 +266,9 @@ export default function ReviewPage() {
   const [builderPlaced, setBuilderPlaced] = useState<string[]>([]);
   const [builderShuffled, setBuilderShuffled] = useState<string[]>([]);
 
+  // Literary hint collapse state
+  const [showChineseHint, setShowChineseHint] = useState(false);
+
   // Combo state
   const [comboData, setComboData] = useState<ComboData | null>(null);
   const [comboPhase, setComboPhase] = useState<ComboPhase>("narrative");
@@ -413,6 +416,7 @@ export default function ReviewPage() {
     setSelected(null);
     setRevealed(false);
     setStepFailed(false);
+    setShowChineseHint(false);
   };
 
   const showScorePopup = (points: number) => {
@@ -1625,10 +1629,32 @@ export default function ReviewPage() {
                   {currentWord.step1.questionType === "imagery_mood" && currentWord.step1.literaryPassage && (
                     <div className="mt-3 mb-3">
                       <div className="p-4 bg-muted/30 rounded-xl border border-border/60 mb-2">
-                        <p className="text-[10px] text-primary font-medium mb-2">📖 文学描写片段</p>
+                        <p className="text-[10px] text-primary font-medium mb-2">📖 Literary Passage</p>
                         <p className="text-sm text-foreground leading-relaxed italic">{renderHighlightedAnswer(currentWord.step1.literaryPassage)}</p>
+                        {/* Collapsible Chinese hint */}
+                        <button
+                          onClick={() => setShowChineseHint(h => !h)}
+                          className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          <span>{showChineseHint ? "▲" : "▼"}</span>
+                          <span>{showChineseHint ? "收起中文提示" : "查看中文提示 (Show Chinese Hint)"}</span>
+                        </button>
+                        <AnimatePresence>
+                          {showChineseHint && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <p className="mt-2 text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-2">
+                                {currentWord.step1.moodNote || currentWord.wordCn}
+                              </p>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
-                      <p className="text-xs text-muted-foreground px-1">▸ 选出最能概括这段描写的文学基调：</p>
+                      <p className="text-xs text-muted-foreground px-1">▸ Select the adjective that best describes the literary tone of this passage:</p>
                     </div>
                   )}
                   {/* Academic definition if available */}
@@ -1826,16 +1852,39 @@ export default function ReviewPage() {
                       {/* Show the literary sentence */}
                       {currentWord.step3.rhetoricalSentence && (
                         <div className="mb-4">
-                          <p className="text-[10px] text-primary font-medium mb-2">✍️ 文学例句</p>
+                          <p className="text-[10px] text-primary font-medium mb-2">✍️ Literary Example</p>
                           <div className="p-4 bg-muted/30 rounded-xl border border-border/60">
                             <p className="text-base text-foreground leading-relaxed italic">{renderHighlightedAnswer(currentWord.step3.rhetoricalSentence)}</p>
+                            {/* Collapsible Chinese hint */}
+                            {currentWord.step3.promptCn && (
+                              <>
+                                <button
+                                  onClick={() => setShowChineseHint(h => !h)}
+                                  className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                                >
+                                  <span>{showChineseHint ? "▲" : "▼"}</span>
+                                  <span>{showChineseHint ? "收起中文提示" : "查看中文提示 (Show Chinese Hint)"}</span>
+                                </button>
+                                <AnimatePresence>
+                                  {showChineseHint && (
+                                    <motion.div
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: "auto" }}
+                                      exit={{ opacity: 0, height: 0 }}
+                                      className="overflow-hidden"
+                                    >
+                                      <p className="mt-2 text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-2">
+                                        {currentWord.step3.promptCn}
+                                      </p>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </>
+                            )}
                           </div>
-                          {currentWord.step3.promptCn && (
-                            <p className="text-xs text-muted-foreground mt-2 px-1">{currentWord.step3.promptCn}</p>
-                          )}
                         </div>
                       )}
-                      <p className="text-sm text-muted-foreground mb-3">▸ 识别该句使用了哪种修辞手法：</p>
+                      <p className="text-sm text-muted-foreground mb-3">▸ Identify the rhetorical device used in the sentence above:</p>
                     </div>
                     {/* Chip-style options */}
                     <div className="grid grid-cols-1 gap-2 mb-4">
