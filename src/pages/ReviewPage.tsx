@@ -259,7 +259,17 @@ export default function ReviewPage() {
   const [transScoring, setTransScoring] = useState(false);
   const [transScore, setTransScore] = useState<any>(null);
   const transTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const scorePopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autofocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("review_onboarding_seen"));
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (scorePopupTimerRef.current) clearTimeout(scorePopupTimerRef.current);
+      if (autofocusTimerRef.current) clearTimeout(autofocusTimerRef.current);
+    };
+  }, []);
 
   // Fetch vocab
   const refreshVocab = useCallback(async () => {
@@ -298,7 +308,8 @@ export default function ReviewPage() {
       }
       // Auto-focus textarea for translation questions
       if (q?.qType === "translation") {
-        setTimeout(() => transTextareaRef.current?.focus(), 80);
+        if (autofocusTimerRef.current) clearTimeout(autofocusTimerRef.current);
+        autofocusTimerRef.current = setTimeout(() => transTextareaRef.current?.focus(), 80);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -359,13 +370,12 @@ export default function ReviewPage() {
     });
   };
 
-  // ===== Single review =====
+  // ===== Single review — per-word parallel streaming =====
   const startReview = async () => {
     if (selectedIds.size === 0) {
       toast.error("未检测到选中单词，请重新选择");
       return;
     }
-    // Save config if user wants it as default
     if (saveAsDefault) saveConfig(practiceConfig);
 
     setLoadingReview(true);
@@ -373,54 +383,80 @@ export default function ReviewPage() {
     setSelected(null); setRevealed(false); setQuestionFailed(false);
     setShowMasteryPrompt(false); setQuestionScores([]);
     setBuilderPlaced([]); setBuilderShuffled([]);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("请先登录"); setLoadingReview(false); return; }
 
-      // Build a fetch with a 120s timeout so the UI never hangs forever
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120_000);
-
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const resp = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/generate-review`,
-        {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            "Authorization": `Bearer ${session.access_token}`,
-            "apikey": anonKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            difficulty: practiceDifficulty,
-            wordIds: Array.from(selectedIds),
-            typeConfig: practiceConfig.types,
-          }),
+      const wordIdList = Array.from(selectedIds);
+
+      // Helper: fetch questions for a single word with its own 90s timeout
+      const fetchOneWord = async (wordId: string): Promise<WordResult | null> => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 90_000);
+        try {
+          const resp = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/generate-review`,
+            {
+              method: "POST",
+              signal: controller.signal,
+              headers: {
+                "Authorization": `Bearer ${session.access_token}`,
+                "apikey": anonKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                difficulty: practiceDifficulty,
+                wordIds: [wordId],
+                typeConfig: practiceConfig.types,
+              }),
+            }
+          );
+          clearTimeout(timeout);
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.error || data.empty || !data.words?.length) return null;
+          return data.words[0] as WordResult;
+        } catch {
+          clearTimeout(timeout);
+          return null;
         }
+      };
+
+      // Launch all word fetches in parallel; append each result as it arrives
+      let firstWordLoaded = false;
+      let successCount = 0;
+
+      await Promise.all(
+        wordIdList.map(async (wordId) => {
+          const result = await fetchOneWord(wordId);
+          if (result) {
+            successCount++;
+            setWords(prev => {
+              // Keep order stable: insert at the slot matching original selection order
+              const idx = wordIdList.indexOf(wordId);
+              const next = [...prev];
+              next[idx] = result;
+              // Compact: remove any undefined holes for display
+              return next.filter(Boolean);
+            });
+            if (!firstWordLoaded) {
+              firstWordLoaded = true;
+              setLoadingReview(false);
+              setMode("review");
+            }
+          }
+        })
       );
-      clearTimeout(timeout);
 
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => "");
-        throw new Error(`HTTP ${resp.status}: ${errText}`);
+      if (successCount === 0) {
+        toast.error("没有可复习的单词，请重试");
       }
-
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
-      if (data.empty) { toast.error("没有可复习的单词"); return; }
-      setWords(data.words || []);
-      setMode("review");
     } catch (e: any) {
       console.error("生成练习题失败:", e);
-      if (e?.name === "AbortError") {
-        toast.error("生成超时，请减少选择单词数量后重试");
-      } else if (e?.message?.includes("429")) {
-        toast.error("请求过于频繁，请稍后再试");
-      } else {
-        toast.error("生成练习题失败，请重试");
-      }
+      toast.error("生成练习题失败，请重试");
     } finally {
       setLoadingReview(false);
     }
@@ -444,7 +480,8 @@ export default function ReviewPage() {
 
   const showScorePopup = (points: number) => {
     setScorePopup({ value: points, key: Date.now() });
-    setTimeout(() => setScorePopup(null), 1500);
+    if (scorePopupTimerRef.current) clearTimeout(scorePopupTimerRef.current);
+    scorePopupTimerRef.current = setTimeout(() => setScorePopup(null), 1500);
   };
 
   // ── Check MCQ answer (recognition + cloze) ───────────────────────────────
