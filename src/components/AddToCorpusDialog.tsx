@@ -41,11 +41,6 @@ const TAG_CATEGORIES = [
     tags: ["语言学", "文学批评", "数字营销", "语料库语言学", "商务英语"],
   },
   {
-    label: "记忆状态",
-    color: "blue" as const,
-    tags: ["模糊", "已掌握", "需重温", "写作高频词", "今天必须背"],
-  },
-  {
     label: "语法功能",
     color: "purple" as const,
     tags: ["用于转折", "用于总结", "固定搭配", "介词用法", "Adj+Noun搭配"],
@@ -118,6 +113,11 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
     const pool = [...new Set([...allPresetTags, ...customHistory])];
     return pool.filter(t => t.toLowerCase().includes(q) && !tags.includes(t)).slice(0, 8);
   }, [tagInput, tags, allPresetTags, customHistory]);
+
+  // Recent custom tags to show on focus (no input yet)
+  const recentCustomTags = useMemo(() => {
+    return customHistory.filter(t => !tags.includes(t)).slice(0, 5);
+  }, [customHistory, tags]);
 
   // Close suggestions on outside click
   useEffect(() => {
@@ -272,6 +272,30 @@ export default function AddToCorpusDialog({ wordData, vocabId, onClose }: Props)
                         </button>
                       );
                     })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {/* Recent custom tags shown on focus with no input */}
+              <AnimatePresence>
+                {showSuggestions && !tagInput.trim() && recentCustomTags.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="absolute left-0 right-12 mt-1 bg-card border rounded-lg shadow-warm-lg z-10 p-2"
+                  >
+                    <p className="text-[10px] text-muted-foreground px-1 mb-1.5">最近使用</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {recentCustomTags.map(t => (
+                        <button
+                          key={t}
+                          onClick={() => addTag(t)}
+                          className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/8 text-primary hover:bg-primary/15 transition-colors ring-1 ring-primary/20"
+                        >
+                          #{t}
+                        </button>
+                      ))}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
