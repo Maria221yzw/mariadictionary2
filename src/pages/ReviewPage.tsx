@@ -192,16 +192,28 @@ export default function ReviewPage() {
 
   // Fetch vocab
   const refreshVocab = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoadingVocab(false); return; }
-    const { data } = await supabase
-      .from("vocab_table")
-      .select("id, word, chinese_definition, phonetic, mastery_level")
-      .order("mastery_level", { ascending: true });
-    setAllVocab(data || []);
-    setLoadingVocab(false);
+    setLoadingVocab(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoadingVocab(false); return; }
+      const { data, error } = await supabase
+        .from("vocab_table")
+        .select("id, word, chinese_definition, phonetic, mastery_level")
+        .order("mastery_level", { ascending: true });
+      if (error) throw error;
+      setAllVocab(data || []);
+    } catch (e) {
+      console.error("加载词库失败:", e);
+      toast.error("加载词库失败，请刷新重试");
+    } finally {
+      setLoadingVocab(false);
+    }
   }, []);
 
+  // Load vocab on mount
+  useEffect(() => {
+    refreshVocab();
+  }, [refreshVocab]);
 
   // Init builder when we enter a builder question
   useEffect(() => {
@@ -285,21 +297,51 @@ export default function ReviewPage() {
     setBuilderPlaced([]); setBuilderShuffled([]);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("请先登录"); return; }
-      const { data, error } = await supabase.functions.invoke("generate-review", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: {
-          difficulty: practiceDifficulty,
-          wordIds: Array.from(selectedIds),
-        },
-      });
-      if (error) throw error;
+      if (!session) { toast.error("请先登录"); setLoadingReview(false); return; }
+
+      // Build a fetch with a 120s timeout so the UI never hangs forever
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120_000);
+
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const resp = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/generate-review`,
+        {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`,
+            "apikey": anonKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            difficulty: practiceDifficulty,
+            wordIds: Array.from(selectedIds),
+          }),
+        }
+      );
+      clearTimeout(timeout);
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        throw new Error(`HTTP ${resp.status}: ${errText}`);
+      }
+
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
       if (data.empty) { toast.error("没有可复习的单词"); return; }
       setWords(data.words || []);
       setMode("review");
-    } catch (e) {
-      console.error(e);
-      toast.error("生成练习题失败");
+    } catch (e: any) {
+      console.error("生成练习题失败:", e);
+      if (e?.name === "AbortError") {
+        toast.error("生成超时，请减少选择单词数量后重试");
+      } else if (e?.message?.includes("429")) {
+        toast.error("请求过于频繁，请稍后再试");
+      } else {
+        toast.error("生成练习题失败，请重试");
+      }
     } finally {
       setLoadingReview(false);
     }
