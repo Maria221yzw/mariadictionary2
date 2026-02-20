@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -419,9 +419,50 @@ export default function CorpusPage() {
     const { error } = await supabase.from("corpus_entries").update({ custom_tags: newTags }).eq("id", entryId);
     if (error) { toast.error("保存失败"); return; }
     setEntries(prev => prev.map(e => e.id === entryId ? { ...e, custom_tags: newTags } : e));
-    // Sync modal tags if open
     if (modalWord) setModalWord(prev => prev ? { ...prev, tags: newTags } : prev);
     toast.success("标签已更新");
+  };
+
+  const [normalizing, setNormalizing] = useState(false);
+
+  const handleNormalizeAllTags = async () => {
+    // Find entries whose tags would change after normalization
+    const toUpdate = entries.filter(e => {
+      const original = e.custom_tags || [];
+      const normalized = normalizeTags(original);
+      return JSON.stringify(original) !== JSON.stringify(normalized);
+    });
+
+    if (toUpdate.length === 0) {
+      toast.info("所有标签已是标准格式，无需修复 ✨");
+      return;
+    }
+
+    setNormalizing(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const entry of toUpdate) {
+      const newTags = normalizeTags(entry.custom_tags || []);
+      const { error } = await supabase
+        .from("corpus_entries")
+        .update({ custom_tags: newTags })
+        .eq("id", entry.id);
+      if (error) {
+        failCount++;
+      } else {
+        successCount++;
+        setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, custom_tags: newTags } : e));
+      }
+    }
+
+    setNormalizing(false);
+
+    if (failCount === 0) {
+      toast.success(`归一化完成 ✅ 已修复 ${successCount} 条词条的标签`);
+    } else {
+      toast.warning(`归一化部分完成：成功 ${successCount} 条，失败 ${failCount} 条`);
+    }
   };
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number; desc: string }[] = [
@@ -519,34 +560,54 @@ export default function CorpusPage() {
               ))}
             </div>
           )}
-          {/* Corpus: normalized category groups chip bar */}
-          {activeTab === "corpus" && corpusCategoryGroups.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-              <button
-                onClick={() => setActiveSubTag(null)}
-                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                  activeSubTag === null
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
-                }`}
-              >
-                全部
-              </button>
-              {corpusCategoryGroups.map(({ label, count }) => (
+          {/* Corpus: normalized category groups chip bar + normalize button */}
+          {activeTab === "corpus" && (
+            <>
+              {corpusCategoryGroups.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
+                  <button
+                    onClick={() => setActiveSubTag(null)}
+                    className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      activeSubTag === null
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                    }`}
+                  >
+                    全部
+                  </button>
+                  {corpusCategoryGroups.map(({ label, count }) => (
+                    <button
+                      key={label}
+                      onClick={() => setActiveSubTag(activeSubTag === label ? null : label)}
+                      className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
+                        activeSubTag === label
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                      }`}
+                    >
+                      {label}
+                      <span className="opacity-70 text-[10px]">({count})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* One-click normalize button */}
+              <div className="flex justify-end mt-2">
                 <button
-                  key={label}
-                  onClick={() => setActiveSubTag(activeSubTag === label ? null : label)}
-                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
-                    activeSubTag === label
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
-                  }`}
+                  onClick={handleNormalizeAllTags}
+                  disabled={normalizing || entries.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-primary/30 text-primary/70 text-xs font-medium hover:bg-primary/5 hover:text-primary hover:border-primary/50 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="扫描并批量修复所有词条中的英文、碎片化标签"
                 >
-                  {label}
-                  <span className="opacity-70 text-[10px]">({count})</span>
+                  {normalizing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3 w-3" />
+                  )}
+                  {normalizing ? "归一化中..." : "一键标签归一化"}
                 </button>
-              ))}
-            </div>
+              </div>
+            </>
           )}
 
         </div>
