@@ -61,6 +61,42 @@ export type Database = {
           },
         ]
       }
+      material_entries: {
+        Row: {
+          category: string | null
+          content: string
+          created_at: string
+          id: string
+          notes: string | null
+          source: string | null
+          tags: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          source?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          source?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vocab_table: {
         Row: {
           chinese_definition: string

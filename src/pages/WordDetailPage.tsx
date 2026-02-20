@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Bookmark, ChevronRight, Loader2, Volume2, Plus, Eye } from "lucide-react";
+import { ArrowLeft, Bookmark, ChevronRight, Loader2, Volume2, Plus, Eye, Copy, FilePlus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,15 @@ import WordFormSection from "@/components/WordFormSection";
 import { useSpeech } from "@/hooks/useSpeech";
 import MasterySelector from "@/components/MasterySelector";
 
+interface MaterialEntry {
+  id: string;
+  content: string;
+  notes: string | null;
+  source: string | null;
+  tags: string[] | null;
+  category: string;
+}
+
 export default function WordDetailPage() {
   const { word: wordKey } = useParams<{ word: string }>();
   const navigate = useNavigate();
@@ -20,6 +29,7 @@ export default function WordDetailPage() {
   const [lookupCount, setLookupCount] = useState<number>(0);
   const [masteryLevel, setMasteryLevel] = useState<number>(1);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
+  const [relatedMaterials, setRelatedMaterials] = useState<MaterialEntry[]>([]);
   const { speaking, speak } = useSpeech();
 
   useEffect(() => {
@@ -64,6 +74,15 @@ export default function WordDetailPage() {
           setLookupCount(1);
           setMasteryLevel((inserted as any)?.mastery_level || 1);
         }
+
+        // Fetch related materials that contain the searched word
+        const wordLower = (fnData.word || decodeURIComponent(wordKey)).toLowerCase();
+        const { data: matData } = await supabase
+          .from("material_entries" as any)
+          .select("id, content, notes, source, tags, category")
+          .filter("content", "ilike", `%${wordLower}%`);
+        setRelatedMaterials((matData as any) || []);
+
       } catch (e: any) {
         console.error(e);
         toast.error("加载失败，请稍后重试");
@@ -358,6 +377,42 @@ export default function WordDetailPage() {
             </TabsContent>
           </Tabs>
         </motion.div>
+
+        {/* ===== Related Personal Materials ===== */}
+        {relatedMaterials.length > 0 && (
+          <motion.div variants={item} className="mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FilePlus className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">我的语料例句</h3>
+              <span className="text-xs text-muted-foreground">· {relatedMaterials.length} 条</span>
+            </div>
+            <div className="space-y-2.5">
+              {relatedMaterials.map(mat => (
+                <div key={mat.id} className="bg-card rounded-xl shadow-warm border border-primary/10 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-foreground leading-relaxed font-medium flex-1">{mat.content}</p>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(mat.content).then(() => toast.success("已复制")).catch(() => toast.error("复制失败"))}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      title="复制"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {mat.notes && <p className="text-xs text-muted-foreground mt-2">📝 {mat.notes}</p>}
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {mat.source && (
+                      <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent text-[10px]">📖 {mat.source}</span>
+                    )}
+                    {mat.tags?.filter(t => t !== mat.source).map(tag => (
+                      <span key={tag} className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">#{tag}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </motion.div>
 
       {showCorpusDialog && vocabId && wordData && (
@@ -370,3 +425,4 @@ export default function WordDetailPage() {
     </div>
   );
 }
+
