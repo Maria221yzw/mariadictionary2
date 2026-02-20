@@ -241,6 +241,242 @@ ${wordList}
 4. 只返回 JSON 数组，不要任何其他文字`;
 }
 
+// ─── Professional question type metadata per difficulty ──────────────────────
+const PROFESSIONAL_STEP_META: Record<string, [string, string, string]> = {
+  basic: [
+    "商务义项辨析 / Business Sense",
+    "标准邮件填空 / Email Phrasing",
+    "专业固定搭配 / Professional Collocations",
+  ],
+  advanced: [
+    "委婉化改写 / Politeness Paraphrasing",
+    "冲突化解话术 / Conflict De-escalation",
+    "职场情境应对 / Scenario Response",
+  ],
+  native: [
+    "谈判博弈模拟 / Negotiation Scripting",
+    "领导力演说 / Visionary Leadership",
+    "地道商务隐喻 / Idiomatic Business",
+  ],
+};
+
+// ─── Professional system prompts by difficulty ────────────────────────────────
+
+function buildProfessionalBasicPrompt(wordList: string): string {
+  return `你是职场商务英语练习题生成器，面向职场精英与商务沟通场景。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【基础认知 - 商务语义建立】三步题，严格遵守以下格式和要求：
+
+**第一步：商务义项辨析 (Business Sense Selection)**
+- step1.questionType = "business_sense"
+- 在 step1.businessContext 中给出一个典型商务场景（如邮件开头、会议发言、合同条款），约 20-30 词
+- 说明目标词在商务语境下的特殊含义（如 appreciation 在商务中常指"增值"而非"感激"）
+- options：4 个中文释义选项（含正确的商务义项 + 3 个语义相关但不准确的干扰项）
+- answer：正确的商务义项
+
+**第二步：标准化邮件填空 (Standard Email Phrasing)**
+- step2.questionType = "email_phrasing"
+- step2.emailContext = 邮件类型说明（如"会议邀约邮件"、"项目进度汇报"、"客户投诉回复"），10字内
+- step2.prompt = 一个完整的商务邮件句子，目标词挖空用 ___（保持真实邮件措辞风格）
+- options：4个选项（正确答案 + 3个语感相近的商务词汇干扰项）
+- answer：正确答案
+- step2.phrasingNote：说明该表达在邮件中的标准用法（中文，30字内）
+
+**第三步：专业固定搭配 (Professional Collocations)**
+- step3.questionType = "professional_collocation"
+- step3.businessAction = 该搭配对应的商务动作（如"签署协议"、"达成共识"、"推进项目"），10字内
+- step3.promptCn = 一个中文商务场景句子，供用户理解语境
+- step3.answer = 完整英文搭配句（目标词用 **加粗** 标记）
+- step3.collocationNote = 该搭配的商务用法说明（中文，40字内，如"reach a consensus: 在商务英语中是'达成共识'的标准表达，常见于会议纪要和谈判收尾"）
+- step3.registerFeature = 该词在职场商务语域的特征说明（中文，30字内）
+
+返回 JSON 数组，每个元素格式：
+[
+  {
+    "word": "leverage",
+    "wordCn": "利用，借力",
+    "step1": {
+      "questionType": "business_sense",
+      "businessContext": "In the quarterly board meeting, the CFO explained how the company would leverage its existing partnerships to expand into new markets.",
+      "options": ["利用优势资源达成目标", "强行施压他方", "借款融资运营", "衡量绩效指标"],
+      "answer": "利用优势资源达成目标"
+    },
+    "step2": {
+      "questionType": "email_phrasing",
+      "emailContext": "项目合作提案邮件",
+      "prompt": "We believe we can ___ our combined expertise to deliver exceptional results for this project.",
+      "options": ["leverage", "manipulate", "exploit", "utilize forcefully"],
+      "answer": "leverage",
+      "phrasingNote": "leverage our expertise 是商务英语中'发挥综合优势'的标准表达，语气积极正面"
+    },
+    "step3": {
+      "questionType": "professional_collocation",
+      "businessAction": "借力资源优势",
+      "promptCn": "我们应当充分利用现有的客户关系网络来加速市场拓展。",
+      "answer": "We should fully **leverage** our existing client network to accelerate market expansion.",
+      "collocationNote": "leverage + 资源类名词：是商务英语高频搭配，传达'战略性借力'的积极内涵，区别于带负面色彩的 exploit",
+      "registerFeature": "职场商务高频词，常见于战略提案、投资报告和商务演示文稿"
+    }
+  }
+]
+
+规则：
+1. 每个单词恰好生成一组三步题
+2. 商务场景须真实，反映实际职场沟通（邮件/会议/谈判）
+3. step2 的句子须符合真实商务邮件措辞风格，不得过于学术化
+4. step3 搭配须是商务英语中真实存在的固定表达
+5. 只返回 JSON 数组，不要任何其他文字`;
+}
+
+function buildProfessionalAdvancedPrompt(wordList: string): string {
+  return `你是职场商务英语练习题生成器，面向需要处理复杂职场互动的专业人士，当前难度：进阶运用。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【进阶运用 - 商务修辞掌握】三步题，严格遵守以下要求：
+
+**第一步：委婉化改写 (Politeness Paraphrasing)**
+- step1.questionType = "politeness_paraphrasing"
+- step1.directStatement = 一个直白甚至生硬的职场句子（如直接拒绝、批评、催促）
+- options：4个改写版本，其中一个使用目标词、语气委婉得体的最佳版本
+- answer：正确的委婉化版本（目标词用 **加粗** 标记）
+- 干扰项：同样含目标词但措辞过于强硬、语气不当或逻辑有误的版本
+
+**第二步：冲突化解话术 (Conflict De-escalation)**
+- step2.questionType = "conflict_deescalation"
+- step2.negativeScenario = 一个负面职场场景描述（如项目延期、预算被削减、客户投诉），中文，30字内
+- step2.prompt = 一个应对该场景的邮件/对话句子，目标词位置挖空用 ___
+- options：4个选项（含能化解冲突的正确答案 + 3个语感相近但效果不佳的词）
+- answer：正确选项
+- step2.deescalationNote = 解释该词如何在此场景中发挥化解冲突的作用（中文，30字内）
+
+**第三步：职场情境应对 (Scenario Response)**
+- step3.questionType = "scenario_response"
+- step3.situation = 一个具体的职场对话场景（如"老板突然临时派任务"），中文，20字内
+- step3.promptCn = 基于该情境，供用户翻译的中文回应句（需体现职场礼仪）
+- step3.answer = 包含目标词的标准职场英文回应（目标词用 **加粗** 标记，3-5句）
+- step3.scenarioNote = 该回应的职场礼仪要点说明（中文，40字内）
+- step3.registerFeature = 该词在职场商务语域的特征说明（中文，30字内）
+
+返回 JSON 数组格式：
+[
+  {
+    "word": "accommodate",
+    "wordCn": "配合，迁就，安排",
+    "step1": {
+      "questionType": "politeness_paraphrasing",
+      "directStatement": "We can't do that. The deadline is fixed and there's no room for changes.",
+      "options": [
+        "While we strive to **accommodate** all requests, the current timeline constraints make adjustments unfeasible at this stage.",
+        "We will try to **accommodate** your needs but the deadline is not moving.",
+        "Unfortunately, we cannot **accommodate** this at all since we are fully booked.",
+        "Your request has been noted but **accommodating** it would cause significant disruption."
+      ],
+      "answer": "While we strive to **accommodate** all requests, the current timeline constraints make adjustments unfeasible at this stage."
+    },
+    "step2": {
+      "questionType": "conflict_deescalation",
+      "negativeScenario": "客户对项目延期表示强烈不满并威胁取消合同",
+      "prompt": "We sincerely apologize for the inconvenience and are fully committed to ___ your concerns with the utmost priority.",
+      "options": ["addressing", "ignoring", "deflecting", "minimizing"],
+      "answer": "addressing",
+      "deescalationNote": "addressing your concerns 传达了'正面处理客户诉求'的积极态度，有效降低对方对抗情绪"
+    },
+    "step3": {
+      "questionType": "scenario_response",
+      "situation": "跨部门同事临时请求协助完成紧急报告",
+      "promptCn": "我们很乐意配合这次的紧急需求，请告诉我们您具体需要哪些支持，我们会尽快安排。",
+      "answer": "We are happy to **accommodate** this urgent request. Could you please share the specific support you need so we can prioritize accordingly and revert to you at the earliest convenience?",
+      "scenarioNote": "accommodate + 请求类名词体现职业弹性；revert to you 是商务英语'回复您'的标准表达",
+      "registerFeature": "accommodate 在职场中传达合作与弹性，常出现于跨部门沟通和客户服务场景"
+    }
+  }
+]
+
+规则：
+1. 委婉化任务：directStatement 须明显生硬，正确选项须真实体现职场礼仪改写
+2. 冲突化解：negativeScenario 须真实、紧张，正确选项须有实质性的情绪安抚效果
+3. 情境应对：situation 须具体，answer 须符合真实职场语气，不能过于书面化
+4. 只返回 JSON 数组，不要任何其他文字`;
+}
+
+function buildProfessionalNativePrompt(wordList: string): string {
+  return `你是职场商务英语练习题生成器，面向需要掌握谈判策略与领导力沟通的高级商务人士，当前难度：母语者水平。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【母语者水平 - 谈判策略与领导力表达】三步题：
+
+**第一步：谈判博弈模拟 (Negotiation Scripting)**
+- step1.questionType = "negotiation_scripting"
+- step1.negotiationContext = 一个商务谈判场景描述（如供应商价格谈判、薪资谈判、合同条款商议），中文，30字内
+- step1.negotiationGoal = 己方谈判目标（中文，20字内）
+- options：4个谈判话术版本，其中一个使用目标词、最能实现目标的策略性表达
+- answer：最佳谈判话术（目标词用 **加粗** 标记）
+- step1.strategyNote = 解析该话术的谈判策略（中文，40字内，如"先让步再加码"、"设定锚点"）
+
+**第二步：愿景与领导力演说 (Visionary Leadership)**
+- step2.questionType = "visionary_leadership"
+- step2.meetingType = 演讲场景（如"全员大会开场"、"Q4战略发布"、"危机应对动员"），10字内
+- step2.prompt = 一段演讲稿中的关键句，目标词位置挖空用 ___
+- options：4个词汇选项（含正确的有感染力的目标词 + 3个语义相近但力度不足的词）
+- answer：正确答案
+- step2.leadershipNote = 解析目标词在领导力语境下的感染力来源（中文，30字内）
+
+**第三步：地道商务隐喻 (Idiomatic Business Expressions)**
+- step3.questionType = "idiomatic_business"
+- step3.idiomScenario = 一个使用目标词相关商务隐喻的真实场景（中文，30字内）
+- step3.informalVer = 一个直白表达该意思的普通句子（英文）
+- step3.promptCn = 要求改写为含地道商务隐喻的版本（中文提示）
+- step3.answer = 使用地道商务隐喻的标准版本（目标词用 **加粗** 标记）
+- step3.idiomExplanation = 解析该隐喻的文化来源与商务含义（中文，40字内）
+- step3.registerFeature = 该词在职场商务语域的特征说明（中文，30字内）
+
+返回 JSON 数组格式：
+[
+  {
+    "word": "pivot",
+    "wordCn": "转型，转变策略",
+    "step1": {
+      "questionType": "negotiation_scripting",
+      "negotiationContext": "创业公司与VC进行A轮融资谈判，投资方对当前商业模式表示疑虑",
+      "negotiationGoal": "在不完全妥协的前提下消除顾虑并促成投资",
+      "options": [
+        "We hear your concerns, and I want to be transparent: we are already **pivoting** our go-to-market strategy based on early user data, which actually reduces the risk you've identified.",
+        "We understand your hesitation and we are willing to **pivot** our entire business model if that's what you need.",
+        "Our team is ready to **pivot** anytime you say so — flexibility is our core value.",
+        "We've already made a **pivot**, so your concerns are no longer valid."
+      ],
+      "answer": "We hear your concerns, and I want to be transparent: we are already **pivoting** our go-to-market strategy based on early user data, which actually reduces the risk you've identified.",
+      "strategyNote": "先承认顾虑（建立信任），再主动披露行动（降低不确定性），最后重新框架为'降低风险'——经典的谈判'化守为攻'"
+    },
+    "step2": {
+      "questionType": "visionary_leadership",
+      "meetingType": "战略转型全员大会",
+      "prompt": "This is not a retreat — this is a strategic ___. We are not abandoning our vision; we are finding a smarter path to it.",
+      "options": ["pivot", "withdrawal", "compromise", "detour"],
+      "answer": "pivot",
+      "leadershipNote": "pivot 在商务语境中暗含'敏捷应变'的正面内涵，将战略转变重新框定为主动掌控而非被动撤退"
+    },
+    "step3": {
+      "questionType": "idiomatic_business",
+      "idiomScenario": "初创公司在发现原有方向不奏效后迅速调整商业模式",
+      "informalVer": "We changed our business direction when things weren't working out.",
+      "promptCn": "用硅谷创业文化中的标准说法，将上述句子改写为更具商业语感的版本（须包含 pivot）",
+      "answer": "Faced with stagnating traction, the founding team made a decisive **pivot** — shifting from a B2C subscription model to an enterprise SaaS solution within a single quarter.",
+      "idiomExplanation": "pivot 源自篮球运动（单脚转身换方向），在硅谷创业文化中演变为'战略转型'的标志性词汇，已成为商业媒体和投资圈的核心术语",
+      "registerFeature": "pivot 是商务英语高频词，尤其在创投、战略咨询和产品管理场景中，传达'有数据支撑的敏捷决策'的专业感"
+    }
+  }
+]
+
+规则：
+1. 每个步骤必须体现母语者水平的策略精确度，干扰项不能太明显错误
+2. 谈判模拟须设计真实的利益博弈，最佳选项应体现具体策略（如锚定、框架重构、条件互换）
+3. 演说题必须体现领导力语言的感染力，而非普通商务表达
+4. 商务隐喻必须有真实的文化来源，不能是生造的表达
+5. 只返回 JSON 数组，不要任何其他文字`;
+}
+
 // ─── Generic (non-academic) system prompt ────────────────────────────────────
 
 function buildGenericPrompt(scenarioContext: string, difficultyContext: string, wordList: string): string {
@@ -375,6 +611,7 @@ serve(async (req) => {
 
     // ─── Choose prompt strategy ───────────────────────────────────────────────
     const isAcademic = scenario === "academic";
+    const isProfessional = scenario === "professional";
     let systemPrompt: string;
     let stepMeta: [string, string, string] | null = null;
 
@@ -387,6 +624,16 @@ serve(async (req) => {
         systemPrompt = buildAcademicNativePrompt(wordList);
       } else {
         systemPrompt = buildAcademicAdvancedPrompt(wordList);
+      }
+    } else if (isProfessional) {
+      const diff = difficulty as "basic" | "advanced" | "native";
+      stepMeta = PROFESSIONAL_STEP_META[diff] || PROFESSIONAL_STEP_META.advanced;
+      if (diff === "basic") {
+        systemPrompt = buildProfessionalBasicPrompt(wordList);
+      } else if (diff === "native") {
+        systemPrompt = buildProfessionalNativePrompt(wordList);
+      } else {
+        systemPrompt = buildProfessionalAdvancedPrompt(wordList);
       }
     } else {
       const scenarioContext = scenarioPrompt || "通用英语学习语境";
@@ -408,6 +655,8 @@ serve(async (req) => {
             role: "user",
             content: isAcademic
               ? `请为以下单词生成学术专项练习题（按上方格式）：\n${wordList}`
+              : isProfessional
+              ? `请为以下单词生成职场商务专项练习题（按上方格式）：\n${wordList}`
               : `请为以下单词生成三阶段复习题：\n${wordList}`,
           },
         ],
@@ -451,7 +700,9 @@ serve(async (req) => {
         // Pass through the step label metadata for the frontend
         stepMeta: stepMeta || null,
         isAcademic,
+        isProfessional,
         academicDifficulty: isAcademic ? difficulty : null,
+        professionalDifficulty: isProfessional ? difficulty : null,
       };
     });
 
