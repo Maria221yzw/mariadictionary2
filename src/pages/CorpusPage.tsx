@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -34,57 +34,119 @@ interface MaterialEntry {
   created_at: string;
 }
 
-// Combined display item
-type DisplayItem =
-  | { type: "corpus"; data: CorpusEntry }
-  | { type: "material"; data: MaterialEntry };
+type Tab = "materials" | "corpus";
 
-// Thematic categories with tag mappings
-const THEMATIC_CATEGORIES = [
-  {
-    key: "exams",
-    label: "考试专项",
-    icon: "📝",
-    tags: ["雅思", "托福", "四六级", "考研", "GRE", "SAT", "TOEFL", "IELTS", "专四", "专八"],
-    scenarios: [] as string[],
-  },
-  {
-    key: "academic",
-    label: "学术领域",
-    icon: "🎓",
-    tags: ["医学", "法律", "生物", "地质", "物理", "化学", "计算机", "经济", "心理学", "哲学", "历史", "文学"],
-    scenarios: ["专业课笔记"],
-  },
-  {
-    key: "writing",
-    label: "翻译与写作",
-    icon: "✍️",
-    tags: ["翻译练习", "写作词汇", "正式表达", "学术写作", "论文"],
-    scenarios: ["学术写作", "翻译练习"],
-  },
-  {
-    key: "general",
-    label: "日常与通用",
-    icon: "💬",
-    tags: ["口语", "日常生活", "旅行", "社交"],
-    scenarios: ["日常口语"],
-  },
-];
+// Inline tag editor for both card types
+function TagEditor({
+  tags,
+  onSave,
+}: {
+  tags: string[];
+  onSave: (newTags: string[]) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [localTags, setLocalTags] = useState<string[]>(tags);
+  const [input, setInput] = useState("");
+  const [saving, setSaving] = useState(false);
 
-const CATEGORY_TO_KEY: Record<string, string> = {
-  "考试专项": "exams",
-  "学术领域": "academic",
-  "翻译与写作": "writing",
-  "日常与通用": "general",
-};
+  const addTag = () => {
+    const t = input.trim().replace(/^#/, "");
+    if (!t || localTags.includes(t)) { setInput(""); return; }
+    if (localTags.length >= 20) { toast.error("最多20个标签"); return; }
+    setLocalTags(prev => [...prev, t]);
+    setInput("");
+  };
+
+  const removeTag = (tag: string) => setLocalTags(prev => prev.filter(t => t !== tag));
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(localTags);
+    setSaving(false);
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setLocalTags(tags);
+    setInput("");
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 mt-2.5 group">
+        {tags.map(tag => (
+          <span
+            key={tag}
+            className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground text-[10px] group-hover:bg-muted transition-colors"
+          >
+            #{tag}
+          </span>
+        ))}
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-colors opacity-0 group-hover:opacity-100"
+          title="编辑标签"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2.5" onClick={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {localTags.map(tag => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]"
+          >
+            #{tag}
+            <button onClick={() => removeTag(tag)} className="hover:opacity-70 ml-0.5">
+              <XIcon className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-1.5 mb-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+          placeholder="添加标签..."
+          maxLength={50}
+          className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+          autoFocus
+        />
+        <button onClick={addTag} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors">
+          +
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+          完成
+        </button>
+        <button onClick={handleCancel} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground transition-colors">
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function CorpusPage() {
   const [entries, setEntries] = useState<CorpusEntry[]>([]);
   const [materials, setMaterials] = useState<MaterialEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [activeSubTag, setActiveSubTag] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("materials");
   const [modalWord, setModalWord] = useState<{ word: string; vocabId: string; tags?: string[] } | null>(null);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [expandedMaterial, setExpandedMaterial] = useState<Set<string>>(new Set());
@@ -116,97 +178,28 @@ export default function CorpusPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  // Build all display items combined
-  const allItems = useMemo((): DisplayItem[] => {
-    const corpusItems: DisplayItem[] = entries.map(e => ({ type: "corpus", data: e }));
-    const matItems: DisplayItem[] = materials.map(m => ({ type: "material", data: m }));
-    return [...corpusItems, ...matItems].sort((a, b) => {
-      const aDate = a.type === "corpus" ? a.data.created_at : a.data.created_at;
-      const bDate = b.type === "corpus" ? b.data.created_at : b.data.created_at;
-      return new Date(bDate).getTime() - new Date(aDate).getTime();
-    });
-  }, [entries, materials]);
+  const filteredMaterials = useMemo(() => {
+    if (!search) return materials;
+    const q = search.toLowerCase();
+    return materials.filter(m =>
+      m.content.toLowerCase().includes(q) ||
+      (m.notes || "").toLowerCase().includes(q) ||
+      (m.source || "").toLowerCase().includes(q) ||
+      (m.tags || []).join(" ").toLowerCase().includes(q)
+    );
+  }, [materials, search]);
 
-  // Categorize — corpus entries + material entries
-  const categorized = useMemo(() => {
-    const result: Record<string, { corpusEntries: CorpusEntry[]; materials: MaterialEntry[]; matchedTags: Set<string> }> = {};
-    THEMATIC_CATEGORIES.forEach(cat => {
-      result[cat.key] = { corpusEntries: [], materials: [], matchedTags: new Set() };
-    });
-
-    entries.forEach(entry => {
-      let matched = false;
-      const entryTags = (entry.custom_tags || []).map(t => t.toLowerCase());
-      for (const cat of THEMATIC_CATEGORIES) {
-        for (const tag of cat.tags) {
-          if (entryTags.some(et => et.includes(tag.toLowerCase()) || tag.toLowerCase().includes(et))) {
-            result[cat.key].corpusEntries.push(entry);
-            result[cat.key].matchedTags.add(tag);
-            matched = true; break;
-          }
-        }
-        if (matched) break;
-        if (cat.scenarios.includes(entry.application_scenario)) {
-          result[cat.key].corpusEntries.push(entry);
-          matched = true; break;
-        }
-      }
-      if (!matched) result["general"].corpusEntries.push(entry);
-    });
-
-    materials.forEach(mat => {
-      const key = CATEGORY_TO_KEY[mat.category] || "general";
-      result[key].materials.push(mat);
-      (mat.tags || []).forEach(t => result[key].matchedTags.add(t));
-    });
-
-    return result;
-  }, [entries, materials]);
-
-  // Apply filters + search
-  const filtered = useMemo((): DisplayItem[] => {
-    let pool: DisplayItem[] = allItems;
-
-    if (activeCategory) {
-      const cat = categorized[activeCategory];
-      const corpusIds = new Set(cat.corpusEntries.map(e => e.id));
-      const matIds = new Set(cat.materials.map(m => m.id));
-      pool = pool.filter(item =>
-        (item.type === "corpus" && corpusIds.has(item.data.id)) ||
-        (item.type === "material" && matIds.has(item.data.id))
-      );
-    }
-
-    if (activeSubTag) {
-      pool = pool.filter(item => {
-        const tags = item.type === "corpus"
-          ? (item.data.custom_tags || [])
-          : (item.data.tags || []);
-        return tags.some(t => t.toLowerCase().includes(activeSubTag.toLowerCase()));
-      });
-    }
-
-    if (search) {
-      const q = search.toLowerCase();
-      pool = pool.filter(item => {
-        if (item.type === "corpus") {
-          const word = item.data.vocab_table?.word || "";
-          const def = item.data.vocab_table?.chinese_definition || "";
-          const tags = (item.data.custom_tags || []).join(" ");
-          const notes = item.data.personal_notes || "";
-          return word.toLowerCase().includes(q) || def.includes(q) || tags.toLowerCase().includes(q) || notes.toLowerCase().includes(q);
-        } else {
-          const content = item.data.content || "";
-          const notes = item.data.notes || "";
-          const source = item.data.source || "";
-          const tags = (item.data.tags || []).join(" ");
-          return content.toLowerCase().includes(q) || notes.toLowerCase().includes(q) || source.toLowerCase().includes(q) || tags.toLowerCase().includes(q);
-        }
-      });
-    }
-
-    return pool;
-  }, [allItems, activeCategory, activeSubTag, search, categorized]);
+  const filteredEntries = useMemo(() => {
+    if (!search) return entries;
+    const q = search.toLowerCase();
+    return entries.filter(e =>
+      (e.vocab_table?.word || "").toLowerCase().includes(q) ||
+      (e.vocab_table?.chinese_definition || "").toLowerCase().includes(q) ||
+      (e.custom_tags || []).join(" ").toLowerCase().includes(q) ||
+      (e.personal_notes || "").toLowerCase().includes(q) ||
+      (e.source_text || "").toLowerCase().includes(q)
+    );
+  }, [entries, search]);
 
   const handleDeleteCorpus = async (id: string) => {
     const { error } = await supabase.from("corpus_entries").delete().eq("id", id);
@@ -232,15 +225,46 @@ export default function CorpusPage() {
     });
   };
 
-  const clearFilters = () => { setActiveCategory(null); setActiveSubTag(null); };
+  const handleSaveMaterialTags = async (matId: string, newTags: string[]) => {
+    const { error } = await supabase.from("material_entries" as any).update({ tags: newTags }).eq("id", matId);
+    if (error) { toast.error("保存失败"); return; }
+    setMaterials(prev => prev.map(m => m.id === matId ? { ...m, tags: newTags } : m));
+    toast.success("标签已更新");
+  };
 
-  const totalCount = entries.length + materials.length;
+  const handleSaveCorpusTags = async (entryId: string, newTags: string[]) => {
+    const { error } = await supabase.from("corpus_entries").update({ custom_tags: newTags }).eq("id", entryId);
+    if (error) { toast.error("保存失败"); return; }
+    setEntries(prev => prev.map(e => e.id === entryId ? { ...e, custom_tags: newTags } : e));
+    // Sync modal tags if open
+    if (modalWord) setModalWord(prev => prev ? { ...prev, tags: newTags } : prev);
+    toast.success("标签已更新");
+  };
+
+  const tabs: { key: Tab; label: string; icon: React.ReactNode; count: number; desc: string }[] = [
+    {
+      key: "materials",
+      label: "灵感素材库",
+      icon: <FilePlus className="h-4 w-4" />,
+      count: materials.length,
+      desc: "手动录入的地道表达",
+    },
+    {
+      key: "corpus",
+      label: "查词沉淀库",
+      icon: <BookOpen className="h-4 w-4" />,
+      count: entries.length,
+      desc: "查词收藏的单词",
+    },
+  ];
+
+  const currentFiltered = activeTab === "materials" ? filteredMaterials : filteredEntries;
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-24">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Library className="h-5 w-5 text-primary" />
             <h2 className="text-2xl font-display font-bold text-foreground">语料仓库</h2>
@@ -253,76 +277,41 @@ export default function CorpusPage() {
             录入素材
           </button>
         </div>
-        <p className="text-sm text-muted-foreground mb-5">
-          共 {totalCount} 条语料 · {entries.length} 个单词 · {materials.length} 条素材
-        </p>
 
-        {/* Thematic Category Cards */}
-        <div className="grid grid-cols-2 gap-2.5 mb-5">
-          {THEMATIC_CATEGORIES.map(cat => {
-            const catData = categorized[cat.key];
-            const count = (catData?.corpusEntries.length || 0) + (catData?.materials.length || 0);
-            const isActive = activeCategory === cat.key;
-            const matchedTags = Array.from(catData?.matchedTags || []);
-            return (
-              <button
-                key={cat.key}
-                onClick={() => { setActiveCategory(isActive ? null : cat.key); setActiveSubTag(null); }}
-                className={`p-3.5 rounded-xl border text-left transition-all ${
-                  isActive
-                    ? "bg-primary/8 border-primary/30 ring-1 ring-primary/20"
-                    : "bg-card border-border hover:border-primary/20"
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-lg">{cat.icon}</span>
-                  <span className="text-lg font-bold text-foreground">{count}</span>
-                </div>
-                <p className="text-sm font-medium text-foreground">{cat.label}</p>
-                {matchedTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {matchedTags.slice(0, 3).map(tag => (
-                      <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">#{tag}</span>
-                    ))}
-                    {matchedTags.length > 3 && <span className="text-[9px] text-muted-foreground">+{matchedTags.length - 3}</span>}
-                  </div>
-                )}
-              </button>
-            );
-          })}
+        {/* Tabs */}
+        <div className="flex gap-3 mb-5">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 p-3.5 rounded-2xl border text-left transition-all ${
+                activeTab === tab.key
+                  ? "bg-primary/8 border-primary/30 ring-1 ring-primary/20"
+                  : "bg-card border-border hover:border-primary/20 hover:bg-muted/30"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <span className={`${activeTab === tab.key ? "text-primary" : "text-muted-foreground"} transition-colors`}>
+                  {tab.icon}
+                </span>
+                <span className={`text-lg font-bold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
+                  {tab.count}
+                </span>
+              </div>
+              <p className={`text-sm font-semibold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
+                {tab.label}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{tab.desc}</p>
+            </button>
+          ))}
         </div>
-
-        {/* Sub-tag chips */}
-        {activeCategory && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mb-4 overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                {THEMATIC_CATEGORIES.find(c => c.key === activeCategory)?.label} 子项
-              </span>
-              <button onClick={clearFilters} className="text-xs text-primary hover:underline">清除筛选</button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {Array.from(categorized[activeCategory]?.matchedTags || []).map(tag => (
-                <button
-                  key={tag}
-                  onClick={() => setActiveSubTag(activeSubTag === tag ? null : tag)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                    activeSubTag === tag ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  #{tag}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
 
         {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="搜索单词、素材内容、来源标签..."
+            placeholder={activeTab === "materials" ? "搜索素材内容、来源、标签..." : "搜索单词、释义、标签..."}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             maxLength={100}
@@ -330,35 +319,101 @@ export default function CorpusPage() {
           />
         </div>
 
-        <p className="text-xs text-muted-foreground mb-3">显示 {filtered.length} 条结果</p>
+        <p className="text-xs text-muted-foreground mb-3">显示 {currentFiltered.length} 条结果</p>
 
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="h-6 w-6 text-primary animate-spin" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : currentFiltered.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-muted-foreground text-sm">暂无语料</p>
+            <p className="text-muted-foreground text-sm">
+              {activeTab === "materials" ? "暂无素材记录" : "暂无单词收藏"}
+            </p>
             <div className="flex items-center justify-center gap-3 mt-3">
-              <button onClick={() => navigate("/")} className="text-primary text-sm hover:underline">去查词添加</button>
-              <span className="text-muted-foreground text-xs">·</span>
-              <button onClick={() => setShowMaterialModal(true)} className="text-primary text-sm hover:underline">手动录入素材</button>
+              {activeTab === "materials" ? (
+                <button onClick={() => setShowMaterialModal(true)} className="text-primary text-sm hover:underline">
+                  录入第一条素材
+                </button>
+              ) : (
+                <button onClick={() => navigate("/")} className="text-primary text-sm hover:underline">
+                  去查词添加
+                </button>
+              )}
             </div>
           </div>
         ) : (
-          <div className="space-y-2.5">
-            <AnimatePresence mode="popLayout">
-              {filtered.map(item => {
-                if (item.type === "corpus") {
-                  const entry = item.data;
-                  return (
+          <AnimatePresence mode="popLayout">
+            <div className="space-y-2.5">
+              {activeTab === "materials"
+                ? (filteredMaterials as MaterialEntry[]).map(mat => {
+                    const isExpanded = expandedMaterial.has(mat.id);
+                    const isLong = mat.content.length > 120;
+                    return (
+                      <motion.div
+                        key={`mat-${mat.id}`}
+                        layout
+                        initial={{ opacity: 0, scale: 0.97 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.97 }}
+                        className="bg-card rounded-xl shadow-warm border border-primary/10 overflow-hidden"
+                      >
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <FilePlus className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span className="text-[10px] font-medium text-primary">私人语料</span>
+                              {mat.source && (
+                                <span className="text-[10px] text-muted-foreground">· {mat.source}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => handleCopyMaterial(mat.content)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                title="复制语料"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMaterial(mat.id)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className={`text-sm text-foreground leading-relaxed font-medium ${isLong && !isExpanded ? "line-clamp-2" : ""}`}>
+                            {mat.content}
+                          </p>
+                          {isLong && (
+                            <button onClick={() => toggleExpandMaterial(mat.id)} className="text-xs text-primary mt-1 hover:underline">
+                              {isExpanded ? "收起" : "展开全文"}
+                            </button>
+                          )}
+
+                          {mat.notes && (
+                            <p className="text-xs text-muted-foreground mt-2">📝 {mat.notes}</p>
+                          )}
+
+                          {/* Tag editor */}
+                          <TagEditor
+                            tags={mat.tags?.filter(t => t !== mat.source) || []}
+                            onSave={(newTags) => handleSaveMaterialTags(mat.id, newTags)}
+                          />
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                : (filteredEntries as CorpusEntry[]).map(entry => (
                     <motion.div
                       key={`corpus-${entry.id}`}
                       layout
                       initial={{ opacity: 0, scale: 0.97 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.97 }}
-                      className="bg-card rounded-xl shadow-warm overflow-hidden border border-border cursor-pointer hover:border-primary/30 hover:bg-muted/30 transition-all"
+                      className="bg-card rounded-xl shadow-warm overflow-hidden border border-border cursor-pointer hover:border-primary/30 hover:bg-muted/20 transition-all"
                       onClick={() => {
                         if (entry.vocab_table) {
                           setModalWord({ word: entry.vocab_table.word, vocabId: entry.vocab_table.id, tags: entry.custom_tags || [] });
@@ -371,111 +426,37 @@ export default function CorpusPage() {
                             <div className="flex items-center gap-2">
                               <h3 className="text-base font-semibold text-foreground">{entry.vocab_table?.word}</h3>
                               {entry.vocab_table?.phonetic && (
-                                <span className="text-[10px] text-muted-foreground">{entry.vocab_table.phonetic}</span>
+                                <span className="text-[10px] text-muted-foreground font-mono">{entry.vocab_table.phonetic}</span>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground mt-0.5">{entry.vocab_table?.chinese_definition}</p>
+                            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{entry.vocab_table?.chinese_definition}</p>
                           </div>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteCorpus(entry.id); }}
-                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-2"
+                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-2 p-1"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                        <div className="flex flex-wrap gap-1.5 mt-2.5">
-                          <span className="tag-chip text-[10px]">{entry.application_scenario}</span>
-                          {entry.custom_tags?.map(tag => (
-                            <span key={tag} className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">#{tag}</span>
-                          ))}
-                        </div>
-                        {entry.source_text && (
-                          <p className="text-xs text-muted-foreground mt-2">来源：{entry.source_text}</p>
-                        )}
+
                         {entry.personal_notes && (
-                          <p className="text-xs text-foreground/70 mt-1 line-clamp-2">📝 {entry.personal_notes}</p>
+                          <p className="text-xs text-foreground/70 mt-1.5 line-clamp-2">📝 {entry.personal_notes}</p>
                         )}
+
+                        {/* Scenario chip + tag editor */}
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <span className="tag-chip text-[10px] shrink-0">{entry.application_scenario}</span>
+                        </div>
+                        <TagEditor
+                          tags={entry.custom_tags || []}
+                          onSave={(newTags) => handleSaveCorpusTags(entry.id, newTags)}
+                        />
                       </div>
                     </motion.div>
-                  );
-                } else {
-                  // Material card
-                  const mat = item.data;
-                  const isExpanded = expandedMaterial.has(mat.id);
-                  const isLong = mat.content.length > 120;
-                  return (
-                    <motion.div
-                      key={`mat-${mat.id}`}
-                      layout
-                      initial={{ opacity: 0, scale: 0.97 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.97 }}
-                      className="bg-card rounded-xl shadow-warm border border-primary/10 overflow-hidden"
-                    >
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <FilePlus className="h-3.5 w-3.5 text-primary shrink-0" />
-                            <span className="text-[10px] font-medium text-primary">私人语料</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={() => handleCopyMaterial(mat.content)}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                              title="复制语料"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteMaterial(mat.id)}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Content with truncation */}
-                        <p
-                          className={`text-sm text-foreground leading-relaxed font-medium ${
-                            isLong && !isExpanded ? "line-clamp-2" : ""
-                          }`}
-                        >
-                          {mat.content}
-                        </p>
-                        {isLong && (
-                          <button
-                            onClick={() => toggleExpandMaterial(mat.id)}
-                            className="text-xs text-primary mt-1 hover:underline"
-                          >
-                            {isExpanded ? "收起" : "展开全文"}
-                          </button>
-                        )}
-
-                        {/* Notes */}
-                        {mat.notes && (
-                          <p className="text-xs text-muted-foreground mt-2">📝 {mat.notes}</p>
-                        )}
-
-                        {/* Tags row */}
-                        <div className="flex flex-wrap gap-1.5 mt-2.5">
-                          <span className="tag-chip text-[10px]">{mat.category}</span>
-                          {mat.source && (
-                            <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent text-[10px]">
-                              📖 {mat.source}
-                            </span>
-                          )}
-                          {mat.tags?.filter(t => t !== mat.source).map(tag => (
-                            <span key={tag} className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">#{tag}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                }
-              })}
-            </AnimatePresence>
-          </div>
+                  ))
+              }
+            </div>
+          </AnimatePresence>
         )}
       </motion.div>
 
