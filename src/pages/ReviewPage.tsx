@@ -902,9 +902,9 @@ export default function ReviewPage() {
             {/* Always-visible summary strip */}
             {!configExpanded && (
               <div className="px-4 pb-3 flex flex-wrap gap-1.5">
-                {ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key].enabled).map(qt => (
+                {ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key]?.enabled).map(qt => (
                   <span key={qt.key} className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5">
-                    {qt.icon} {qt.label} ×{practiceConfig.types[qt.key].count}
+                    {qt.icon} {qt.label} ×{practiceConfig.types[qt.key]?.count ?? 1}
                   </span>
                 ))}
                 <span className="text-[10px] text-muted-foreground ml-auto">
@@ -946,8 +946,8 @@ export default function ReviewPage() {
                       {selectedIds.size === 1 ? "将针对选中的 1 个词练习" : selectedIds.size > 1 ? `将针对选中的 ${selectedIds.size} 个词练习` : "请先在下方勾选单词"}
                     </span>
                     {selectedIds.size > 0 && (() => {
-                      const enabledTypes = ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key].enabled);
-                      const qPerWord = enabledTypes.reduce((s, qt) => s + practiceConfig.types[qt.key].count, 0);
+                      const enabledTypes = ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key]?.enabled);
+                      const qPerWord = enabledTypes.reduce((s, qt) => s + (practiceConfig.types[qt.key]?.count ?? 1), 0);
                       const total = selectedIds.size * qPerWord;
                       return (
                         <span className="mt-1.5 text-[10px] font-medium text-primary flex items-center gap-1">
