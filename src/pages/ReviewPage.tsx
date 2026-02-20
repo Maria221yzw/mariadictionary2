@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Checkbox } from "@/components/ui/checkbox";
+import MasterySelector from "@/components/MasterySelector";
 
 // ===== Interfaces =====
 interface VocabWord {
@@ -469,7 +470,7 @@ export default function ReviewPage() {
                             : "border-border hover:border-muted-foreground/30 hover:bg-muted/30"
                         }`}
                       >
-                        {/* Checkbox: semi-transparent until hover or checked */}
+                        {/* Checkbox */}
                         <div className={`shrink-0 transition-opacity ${isChecked ? "opacity-100" : "opacity-30 group-hover:opacity-70"}`}>
                           <Checkbox
                             id={checkboxId}
@@ -478,12 +479,26 @@ export default function ReviewPage() {
                             className="h-4 w-4 pointer-events-auto"
                           />
                         </div>
-                        <div className={`w-2 h-8 rounded-full shrink-0 ${MASTERY_COLORS[v.mastery_level]}`} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-foreground">{v.word}</p>
                           <p className="text-xs text-muted-foreground line-clamp-1">{v.chinese_definition}</p>
                         </div>
-                        {v.phonetic && <span className="text-[10px] text-muted-foreground">{v.phonetic}</span>}
+                        {v.phonetic && <span className="text-[10px] text-muted-foreground shrink-0">{v.phonetic}</span>}
+                        {/* Mastery selector — stopPropagation inside component */}
+                        <MasterySelector
+                          vocabId={v.id}
+                          currentLevel={v.mastery_level}
+                          size="sm"
+                          onUpdate={(newLevel) => {
+                            setAllVocab(prev => prev.map(w =>
+                              w.id === v.id ? { ...w, mastery_level: newLevel } : w
+                            ));
+                            // Deselect if moved away from current filter
+                            if (activeMastery !== null && newLevel !== activeMastery) {
+                              setSelectedIds(prev => { const n = new Set(prev); n.delete(v.id); return n; });
+                            }
+                          }}
+                        />
                       </label>
                     );
                   })}

@@ -9,6 +9,7 @@ import type { AIWordData } from "@/pages/SearchPage";
 import AddToCorpusDialog from "@/components/AddToCorpusDialog";
 import WordFormSection from "@/components/WordFormSection";
 import { useSpeech } from "@/hooks/useSpeech";
+import MasterySelector from "@/components/MasterySelector";
 
 export default function WordDetailPage() {
   const { word: wordKey } = useParams<{ word: string }>();
@@ -17,6 +18,7 @@ export default function WordDetailPage() {
   const [wordData, setWordData] = useState<AIWordData | null>(null);
   const [vocabId, setVocabId] = useState<string | null>(null);
   const [lookupCount, setLookupCount] = useState<number>(0);
+  const [masteryLevel, setMasteryLevel] = useState<number>(1);
   const [showCorpusDialog, setShowCorpusDialog] = useState(false);
   const { speaking, speak } = useSpeech();
 
@@ -40,7 +42,7 @@ export default function WordDetailPage() {
 
         const { data: existing } = await supabase
           .from("vocab_table")
-          .select("id, lookup_count")
+          .select("id, lookup_count, mastery_level")
           .eq("word", fnData.word || wordKey)
           .eq("user_id", user.id)
           .maybeSingle();
@@ -50,15 +52,17 @@ export default function WordDetailPage() {
           await supabase.from("vocab_table").update({ lookup_count: newCount }).eq("id", existing.id);
           setVocabId(existing.id);
           setLookupCount(newCount);
+          setMasteryLevel((existing as any).mastery_level || 1);
         } else {
           const { data: inserted } = await supabase.from("vocab_table").insert({
             word: (fnData.word || wordKey).slice(0, 100),
             phonetic: (fnData.phonetic || "").slice(0, 200),
             chinese_definition: (fnData.coreDefinition || fnData.definitions?.[0]?.meaningCn || "").slice(0, 500),
             user_id: user.id,
-          }).select("id").single();
+          }).select("id, mastery_level").single();
           setVocabId(inserted?.id || null);
           setLookupCount(1);
+          setMasteryLevel((inserted as any)?.mastery_level || 1);
         }
       } catch (e: any) {
         console.error(e);
@@ -117,6 +121,20 @@ export default function WordDetailPage() {
               </span>
             )}
           </div>
+
+          {/* Mastery level selector */}
+          {vocabId && (
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-xs text-muted-foreground">掌握程度：</span>
+              <MasterySelector
+                vocabId={vocabId}
+                currentLevel={masteryLevel}
+                size="md"
+                onUpdate={setMasteryLevel}
+              />
+              <span className="text-xs text-muted-foreground">L{masteryLevel}</span>
+            </div>
+          )}
 
           {/* Phonetics with TTS */}
           <div className="flex items-center gap-4 mt-3">
