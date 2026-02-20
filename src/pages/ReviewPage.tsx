@@ -8,15 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import MasterySelector from "@/components/MasterySelector";
 
 // ===== Practice Config Types =====
-type PracticeScenario = "academic" | "professional" | "colloquial" | "literary";
 type PracticeDifficulty = "basic" | "advanced" | "native";
-
-const SCENARIO_LABELS: Record<PracticeScenario, string> = {
-  academic: "🎓 高阶学术",
-  professional: "💼 职场商务",
-  colloquial: "💬 地道口语",
-  literary: "📖 文学表达",
-};
 
 const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   basic: "基础认知",
@@ -24,21 +16,18 @@ const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   native: "母语者水平",
 };
 
-const SCENARIO_PROMPTS: Record<PracticeScenario, string> = {
-  academic: "正式学术语境（论文写作、GRE/IELTS 作文，使用高级词汇和复杂句式）",
-  professional: "职场商务语境（邮件往来、会议发言、商务洽谈，语气正式但不过于学术）",
-  colloquial: "地道口语语境（影视台词、街头俚语、非正式社交，自然流畅）",
-  literary: "文学创意语境（原著阅读风格、创意写作、翻译实践，注重语言美感）",
+// Scene micro-tag colours for the review card header
+const SCENE_TAG_STYLES: Record<string, string> = {
+  academic:     "bg-blue-500/10 text-blue-600 border-blue-500/20",
+  professional: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  colloquial:   "bg-green-500/10 text-green-600 border-green-500/20",
+  literary:     "bg-purple-500/10 text-purple-600 border-purple-500/20",
+  exam:         "bg-rose-500/10 text-rose-600 border-rose-500/20",
 };
 
-const DIFFICULTY_PROMPTS: Record<PracticeDifficulty, string> = {
-  basic: "基础认知难度（句子结构简单，词汇常见，侧重识别与理解）",
-  advanced: "进阶运用难度（句子有一定复杂度，考察词语的灵活运用）",
-  native: "母语者水平（使用地道表达、复杂句式和微妙语义，接近真实英语环境）",
-};
-
-// ===== Academic Step Metadata =====
-const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
+// ===== Step type label map (all scenarios) =====
+const STEP_TYPE_LABELS: Record<string, string> = {
+  // Academic
   definition_matching: "定义辨析",
   register_distinction: "语域识别",
   collocation_cloze: "学术搭配",
@@ -48,7 +37,7 @@ const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
   paraphrasing: "摘要重构",
   register_flip: "语域转换",
   nuance_distinction: "近义微观辨析",
-  // Professional step types
+  // Professional
   business_sense: "商务义项辨析",
   email_phrasing: "邮件填空",
   professional_collocation: "专业搭配",
@@ -58,7 +47,7 @@ const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
   negotiation_scripting: "谈判博弈模拟",
   visionary_leadership: "领导力演说",
   idiomatic_business: "商务隐喻",
-  // Literary step types
+  // Literary
   imagery_mood: "意象与情感匹配",
   connotation_distinction: "词汇色彩辨析",
   rhetorical_device: "修辞手法识别",
@@ -68,6 +57,21 @@ const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
   stylistic_imitation: "风格模仿创作",
   explication: "文本深度细读",
   perspective_shift: "叙事视角转换",
+  // Colloquial
+  context_matching: "口语语境识别",
+  colloquial_cloze: "口语填空",
+  colloquial_builder: "地道组句",
+  register_colloquial: "口语化改写",
+  idiom_context: "习语语境",
+  cultural_context: "文化深度应对",
+  slang_nuance: "俚语色彩辨析",
+  // Exam
+  synonym_replacement: "同义替换",
+  exam_cloze: "考试填空",
+  exam_sentence: "考试级组句",
+  logical_link: "逻辑衔接挑战",
+  tem8_translation: "专八阅读",
+  collocational_precision: "高级精准搭配",
 };
 
 // ===== Interfaces =====
@@ -98,7 +102,10 @@ interface WordReview {
   wordCn: string;
   vocabId: string | null;
   masteryLevel: number;
-  // Academic / professional metadata
+  scene?: string;
+  scenarioLabel?: string;
+  difficulty?: string;
+  // Scenario flags
   isAcademic?: boolean;
   isProfessional?: boolean;
   academicDifficulty?: string | null;
@@ -243,7 +250,6 @@ export default function ReviewPage() {
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
 
   // Practice config state
-  const [practiceScenario, setPracticeScenario] = useState<PracticeScenario>("academic");
   const [practiceDifficulty, setPracticeDifficulty] = useState<PracticeDifficulty>("advanced");
 
   // Review state (single word mode)
@@ -374,10 +380,7 @@ export default function ReviewPage() {
       const { data, error } = await supabase.functions.invoke("generate-review", {
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: {
-          scenario: practiceScenario,
           difficulty: practiceDifficulty,
-          scenarioPrompt: SCENARIO_PROMPTS[practiceScenario],
-          difficultyPrompt: DIFFICULTY_PROMPTS[practiceDifficulty],
           wordIds: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
         },
       });
@@ -1504,6 +1507,9 @@ export default function ReviewPage() {
 
   if (!currentWord) return null;
 
+  // Strip **bold** markdown from option text (options should never show bold in UI)
+  const renderOptionText = (text: string) => text.replace(/\*\*/g, "");
+
   return (
     <div className="max-w-lg mx-auto px-4 py-6 pb-24 relative">
       {/* Score popup animation */}
@@ -1532,12 +1538,19 @@ export default function ReviewPage() {
           <ArrowRight className="h-4 w-4 rotate-180" />
         </button>
         <Sparkles className="h-5 w-5 text-primary" />
-        <h2 className="text-2xl font-display font-bold text-foreground">三步回顾</h2>
+        <h2 className="text-2xl font-display font-bold text-foreground">五场景实战</h2>
       </div>
 
+      {/* Scene micro-tag */}
+      {currentWord?.scenarioLabel && (
+        <div className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border mb-3 ${SCENE_TAG_STYLES[currentWord.scene || "academic"]}`}>
+          {currentWord.scenarioLabel}
+        </div>
+      )}
+
       {/* Mode badge */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-4">
-        <BookOpen className="h-3 w-3" /> 单词强化模式
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-4 ml-2">
+        <BookOpen className="h-3 w-3" /> {DIFFICULTY_LABELS[practiceDifficulty as PracticeDifficulty] || "练习中"}
       </motion.div>
 
       {/* Progress */}
@@ -1608,7 +1621,7 @@ export default function ReviewPage() {
                   <div className="flex items-center justify-between mb-3">
                     <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-primary/10 text-primary">
                       {currentWord.step1.questionType
-                        ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step1.questionType] || STEP_SUBLABELS[0]
+                        ? STEP_TYPE_LABELS[currentWord.step1.questionType] || STEP_SUBLABELS[0]
                         : STEP_SUBLABELS[0]}
                     </span>
                     {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
@@ -1685,7 +1698,7 @@ export default function ReviewPage() {
                     } else cls += isSel ? "bg-primary/10 border-primary text-primary" : "bg-card border-border text-foreground hover:border-primary/30";
                     return (
                       <button key={opt} onClick={() => !revealed && setSelected(opt)} disabled={revealed} className={cls}>
-                        {opt}
+                        {renderOptionText(opt)}
                         {revealed && isRight && <Check className="inline h-3.5 w-3.5 ml-2" />}
                         {revealed && isSel && !isRight && <X className="inline h-3.5 w-3.5 ml-2" />}
                       </button>
@@ -1725,7 +1738,7 @@ export default function ReviewPage() {
                   <div className="flex items-center justify-between mb-3">
                     <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-accent text-accent-foreground">
                       {currentWord.step2.questionType
-                        ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step2.questionType] || STEP_SUBLABELS[1]
+                        ? STEP_TYPE_LABELS[currentWord.step2.questionType] || STEP_SUBLABELS[1]
                         : STEP_SUBLABELS[1]}
                     </span>
                     {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
@@ -1834,7 +1847,7 @@ export default function ReviewPage() {
                     <div className="bg-card rounded-2xl p-6 shadow-warm mb-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-primary/8 text-primary border border-primary/20">
-                          {ACADEMIC_STEP_TYPE_LABELS["rhetorical_device"]}
+                          {STEP_TYPE_LABELS["rhetorical_device"]}
                         </span>
                         <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">📖 文学专项</span>
                       </div>
@@ -1936,7 +1949,7 @@ export default function ReviewPage() {
                       <div className="flex items-center justify-between mb-3">
                         <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-primary/8 text-primary border border-primary/20">
                           {currentWord.step3.questionType
-                            ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step3.questionType] || STEP_SUBLABELS[2]
+                            ? STEP_TYPE_LABELS[currentWord.step3.questionType] || STEP_SUBLABELS[2]
                             : STEP_SUBLABELS[2]}
                         </span>
                         {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
