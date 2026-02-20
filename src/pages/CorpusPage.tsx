@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Dumbbell } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -490,16 +490,6 @@ export default function CorpusPage() {
                             </div>
                             <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{entry.vocab_table?.chinese_definition}</p>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/review?vocabId=${entry.vocab_table?.id}`);
-                            }}
-                            className="text-muted-foreground hover:text-primary transition-colors shrink-0 ml-1 p-1"
-                            title="加入练习"
-                          >
-                            <Dumbbell className="h-3.5 w-3.5" />
-                          </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteCorpus(entry.id); }}
                             className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-1 p-1"

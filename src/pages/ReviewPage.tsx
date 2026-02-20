@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2 } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, FilePlus, Library } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -44,6 +44,20 @@ interface VocabWord {
   chinese_definition: string;
   phonetic: string | null;
   mastery_level: number;
+}
+
+interface MaterialItem {
+  id: string;
+  content: string;
+  notes: string | null;
+  source: string | null;
+  tags: string[] | null;
+}
+
+interface CorpusItem {
+  id: string;
+  application_scenario: string;
+  vocab_table: { id: string; word: string; chinese_definition: string } | null;
 }
 
 interface WordReview {
@@ -117,6 +131,16 @@ export default function ReviewPage() {
   const [activeMastery, setActiveMastery] = useState<number | null>(null);
   const [includeMastered, setIncludeMastered] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Material picker state
+  const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<"materials" | "corpus">("materials");
+  const [pickerMaterials, setPickerMaterials] = useState<MaterialItem[]>([]);
+  const [pickerCorpus, setPickerCorpus] = useState<CorpusItem[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSubTag, setPickerSubTag] = useState<string | null>(null);
+  // selectedMaterialIds: ids from material_entries picked for review context
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
 
   // Practice config state
   const [practiceScenario, setPracticeScenario] = useState<PracticeScenario>("academic");
@@ -344,6 +368,55 @@ export default function ReviewPage() {
     if (idx < comboPhases.length - 1) setComboPhase(comboPhases[idx + 1]);
   };
 
+  // Fetch picker data (materials + corpus)
+  const fetchPickerData = useCallback(async () => {
+    setPickerLoading(true);
+    const [matRes, corpRes] = await Promise.all([
+      supabase.from("material_entries" as any).select("id, content, notes, source, tags").order("created_at", { ascending: false }),
+      supabase.from("corpus_entries").select("id, application_scenario, vocab_table(id, word, chinese_definition)").order("created_at", { ascending: false }),
+    ]);
+    setPickerMaterials((matRes.data as any) || []);
+    setPickerCorpus((corpRes.data as any) || []);
+    setPickerLoading(false);
+  }, []);
+
+  const openMaterialPicker = () => {
+    setPickerSubTag(null);
+    setPickerTab("materials");
+    setShowMaterialPicker(true);
+    fetchPickerData();
+  };
+
+  const pickerMaterialSubTags = useMemo(() => {
+    const s = new Set<string>();
+    pickerMaterials.forEach(m => { if (m.source) s.add(m.source); });
+    return Array.from(s);
+  }, [pickerMaterials]);
+
+  const pickerCorpusSubTags = useMemo(() => {
+    const s = new Set<string>();
+    pickerCorpus.forEach(e => { if (e.application_scenario) s.add(e.application_scenario); });
+    return Array.from(s);
+  }, [pickerCorpus]);
+
+  const filteredPickerMaterials = useMemo(() => {
+    if (!pickerSubTag) return pickerMaterials;
+    return pickerMaterials.filter(m => m.source === pickerSubTag);
+  }, [pickerMaterials, pickerSubTag]);
+
+  const filteredPickerCorpus = useMemo(() => {
+    if (!pickerSubTag) return pickerCorpus;
+    return pickerCorpus.filter(e => e.application_scenario === pickerSubTag);
+  }, [pickerCorpus, pickerSubTag]);
+
+  const toggleMaterialSelect = (id: string) => {
+    setSelectedMaterialIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
   // ==================== DASHBOARD ====================
   if (mode === "dashboard") {
     if (loadingVocab) {
@@ -373,6 +446,7 @@ export default function ReviewPage() {
     }
 
     return (
+      <>
       <div className="max-w-2xl mx-auto px-4 py-6 pb-32">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-2 mb-2">
@@ -511,6 +585,20 @@ export default function ReviewPage() {
             </button>
           </div>
 
+          {/* From Corpus button */}
+          <button
+            onClick={openMaterialPicker}
+            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-dashed border-primary/30 bg-primary/5 text-sm text-primary hover:bg-primary/10 transition-colors mb-5"
+          >
+            <span className="flex items-center gap-2">
+              <Library className="h-4 w-4" />
+              从仓库添加素材
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {selectedMaterialIds.size > 0 ? `已选 ${selectedMaterialIds.size} 条素材` : "灵感素材 · 查词沉淀"}
+            </span>
+          </button>
+
           {/* Onboarding tooltip */}
           <AnimatePresence>
             {showOnboarding && (
@@ -534,7 +622,6 @@ export default function ReviewPage() {
               </motion.div>
             )}
           </AnimatePresence>
-
 
           {/* Word list for selected mastery level */}
           <AnimatePresence>
@@ -660,6 +747,155 @@ export default function ReviewPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Material Picker Modal */}
+      <AnimatePresence>
+        {showMaterialPicker && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-foreground/20 backdrop-blur-sm p-4"
+            onClick={() => setShowMaterialPicker(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              className="bg-card rounded-2xl shadow-warm-lg border w-full max-w-lg max-h-[80vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b shrink-0">
+                <div className="flex items-center gap-2">
+                  <Library className="h-4 w-4 text-primary" />
+                  <h3 className="font-display font-semibold text-foreground text-sm">从仓库选取素材</h3>
+                </div>
+                <button onClick={() => setShowMaterialPicker(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex gap-0 border-b shrink-0">
+                {([
+                  { key: "materials", label: "灵感素材", icon: <FilePlus className="h-3.5 w-3.5" /> },
+                  { key: "corpus", label: "查词沉淀", icon: <BookOpen className="h-3.5 w-3.5" /> },
+                ] as const).map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => { setPickerTab(t.key); setPickerSubTag(null); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
+                      pickerTab === t.key
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t.icon}{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sub-tag chips */}
+              {(() => {
+                const subTags = pickerTab === "materials" ? pickerMaterialSubTags : pickerCorpusSubTags;
+                return subTags.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto scrollbar-none px-4 py-2.5 shrink-0 border-b">
+                    <button
+                      onClick={() => setPickerSubTag(null)}
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                        pickerSubTag === null ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary border border-primary/20"
+                      }`}
+                    >全部</button>
+                    {subTags.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => setPickerSubTag(pickerSubTag === tag ? null : tag)}
+                        className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                          pickerSubTag === tag ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary border border-primary/20"
+                        }`}
+                      >{tag}</button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {pickerLoading ? (
+                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+                ) : pickerTab === "materials" ? (
+                  filteredPickerMaterials.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-8">暂无素材</p>
+                  ) : filteredPickerMaterials.map(m => {
+                    const isSelected = selectedMaterialIds.has(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                          isSelected ? "border-primary/30 bg-primary/5" : "border-border bg-card hover:border-muted-foreground/30"
+                        }`}
+                      >
+                        <div className={`shrink-0 mt-0.5 transition-opacity ${isSelected ? "opacity-100" : "opacity-30"}`}>
+                          <Checkbox checked={isSelected} onCheckedChange={() => toggleMaterialSelect(m.id)} className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-foreground font-medium line-clamp-2">{m.content}</p>
+                          {m.source && <p className="text-[10px] text-primary mt-0.5">{m.source}</p>}
+                          {m.notes && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">📝 {m.notes}</p>}
+                        </div>
+                      </label>
+                    );
+                  })
+                ) : (
+                  filteredPickerCorpus.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-8">暂无收藏</p>
+                  ) : filteredPickerCorpus.map(e => {
+                    if (!e.vocab_table) return null;
+                    const vocabId = e.vocab_table.id;
+                    const isSelected = selectedIds.has(vocabId);
+                    return (
+                      <label
+                        key={e.id}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                          isSelected ? "border-primary/30 bg-primary/5" : "border-border bg-card hover:border-muted-foreground/30"
+                        }`}
+                      >
+                        <div className={`shrink-0 transition-opacity ${isSelected ? "opacity-100" : "opacity-30"}`}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(vocabId)}
+                            className="h-4 w-4"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{e.vocab_table.word}</p>
+                          <p className="text-[10px] text-muted-foreground line-clamp-1">{e.vocab_table.chinese_definition}</p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{e.application_scenario}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 border-t shrink-0 flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  已选 {pickerTab === "materials" ? selectedMaterialIds.size : selectedIds.size} 条
+                </span>
+                <button
+                  onClick={() => setShowMaterialPicker(false)}
+                  className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity"
+                >
+                  完成选择
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </>
     );
   }
 
