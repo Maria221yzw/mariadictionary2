@@ -1,11 +1,70 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CorpusWordModal from "@/components/CorpusWordModal";
 import ManualMaterialModal from "@/components/ManualMaterialModal";
+
+// ========== Tag Normalization System ==========
+const TAG_NORMALIZATION_MAP: Record<string, string> = {
+  "医学": "医学术语", "医学词汇": "医学术语", "内窥镜": "医学术语", "解剖学": "医学术语",
+  "病理": "医学术语", "手术": "医学术语", "medical": "医学术语", "medicine": "医学术语",
+  "文学": "文学赏析", "文学批评": "文学赏析", "literature": "文学赏析", "literary": "文学赏析",
+  "学术": "学术写作", "论文写作": "学术写作", "academic": "学术写作",
+  "法律": "法律文书", "法学": "法律文书", "legal": "法律文书", "law": "法律文书",
+  "金融": "金融经济", "经济": "金融经济", "finance": "金融经济",
+  "商务": "商务英语", "business": "商务英语",
+  "科技": "科技前沿", "技术": "科技前沿", "technology": "科技前沿",
+  "心理": "心理学", "psychology": "心理学",
+  "历史": "历史文化", "文化": "历史文化", "history": "历史文化",
+  "环境": "生态环境", "生态": "生态环境", "ecology": "生态环境",
+  "营销": "数字营销", "marketing": "数字营销",
+  "口语": "日常口语", "日常": "日常口语", "colloquial": "日常口语",
+  "翻译": "翻译练习", "translation": "翻译练习",
+  "正式": "正式语体", "formal": "正式语体",
+};
+
+const CORPUS_CATEGORY_GROUPS: { label: string; members: string[] }[] = [
+  { label: "医学术语", members: ["医学术语", "医学", "医学词汇", "内窥镜", "解剖学", "病理", "手术"] },
+  { label: "文学赏析", members: ["文学赏析", "文学", "文学批评"] },
+  { label: "学术写作", members: ["学术写作", "学术", "论文写作", "高频学术词"] },
+  { label: "法律文书", members: ["法律文书", "法律", "法学"] },
+  { label: "金融经济", members: ["金融经济", "金融", "经济"] },
+  { label: "商务英语", members: ["商务英语", "商务", "职场"] },
+  { label: "科技前沿", members: ["科技前沿", "科技", "技术"] },
+  { label: "心理学",   members: ["心理学", "心理"] },
+  { label: "历史文化", members: ["历史文化", "历史", "文化"] },
+  { label: "生态环境", members: ["生态环境", "生态", "环境"] },
+  { label: "数字营销", members: ["数字营销", "营销"] },
+  { label: "语言学",   members: ["语言学"] },
+  { label: "哲学思辨", members: ["哲学思辨", "哲学"] },
+  { label: "日常口语", members: ["日常口语", "口语", "日常"] },
+  { label: "翻译练习", members: ["翻译练习", "翻译"] },
+  { label: "专业课笔记", members: ["专业课笔记"] },
+  { label: "正式语体", members: ["正式语体", "正式"] },
+];
+
+function normalizeTag(tag: string): string {
+  return TAG_NORMALIZATION_MAP[tag] ?? tag;
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const t of tags) {
+    const n = normalizeTag(t);
+    if (!seen.has(n)) { seen.add(n); result.push(n); }
+  }
+  return result;
+}
+
+function tagMatchesCategory(tag: string, categoryLabel: string): boolean {
+  const group = CORPUS_CATEGORY_GROUPS.find(g => g.label === categoryLabel);
+  if (!group) return tag === categoryLabel || normalizeTag(tag) === categoryLabel;
+  return group.members.includes(tag) || group.members.includes(normalizeTag(tag));
+}
 
 interface CorpusEntry {
   id: string;
@@ -48,9 +107,12 @@ function TagEditor({
   const [localTags, setLocalTags] = useState<string[]>(tags);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState<string[]>([]);
+  const [mergeTarget, setMergeTarget] = useState("");
 
   const addTag = () => {
-    const t = input.trim().replace(/^#/, "");
+    const t = normalizeTag(input.trim().replace(/^#/, ""));
     if (!t || localTags.includes(t)) { setInput(""); return; }
     if (localTags.length >= 20) { toast.error("最多20个标签"); return; }
     setLocalTags(prev => [...prev, t]);
@@ -59,17 +121,35 @@ function TagEditor({
 
   const removeTag = (tag: string) => setLocalTags(prev => prev.filter(t => t !== tag));
 
+  const handleMerge = () => {
+    if (!mergeTarget.trim() || selectedForMerge.length < 2) { toast.error("请选择至少2个标签并输入目标名称"); return; }
+    const target = mergeTarget.trim().replace(/^#/, "");
+    setLocalTags(prev => {
+      const filtered = prev.filter(t => !selectedForMerge.includes(t));
+      if (filtered.includes(target)) return filtered;
+      return [...filtered, target];
+    });
+    setMergeMode(false);
+    setSelectedForMerge([]);
+    setMergeTarget("");
+    toast.success(`已合并为 #${target}`);
+  };
+
   const handleSave = async () => {
     setSaving(true);
-    await onSave(localTags);
+    await onSave(normalizeTags(localTags));
     setSaving(false);
     setEditing(false);
+    setMergeMode(false);
+    setSelectedForMerge([]);
   };
 
   const handleCancel = () => {
     setLocalTags(tags);
     setInput("");
     setEditing(false);
+    setMergeMode(false);
+    setSelectedForMerge([]);
   };
 
   if (!editing) {
@@ -96,35 +176,69 @@ function TagEditor({
 
   return (
     <div className="mt-2.5" onClick={(e) => e.stopPropagation()}>
-      <div className="flex flex-wrap gap-1.5 mb-2">
-        {localTags.map(tag => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]"
-          >
-            #{tag}
-            <button onClick={() => removeTag(tag)} className="hover:opacity-70 ml-0.5">
-              <XIcon className="h-2.5 w-2.5" />
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="flex gap-1.5 mb-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
-          placeholder="添加标签..."
-          maxLength={50}
-          className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
-          autoFocus
-        />
-        <button onClick={addTag} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors">
-          +
-        </button>
-      </div>
-      <div className="flex gap-1.5">
+      {/* Merge mode */}
+      {mergeMode ? (
+        <div className="space-y-2 mb-2">
+          <p className="text-[10px] text-muted-foreground">点击标签选中要合并的项目</p>
+          <div className="flex flex-wrap gap-1.5">
+            {localTags.map(tag => {
+              const selected = selectedForMerge.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  onClick={() => setSelectedForMerge(prev => selected ? prev.filter(t => t !== tag) : [...prev, tag])}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] ring-1 transition-all ${selected ? "bg-primary text-primary-foreground ring-primary" : "bg-muted/50 text-muted-foreground ring-border"}`}
+                >
+                  #{tag}
+                  {selected && <Check className="h-2.5 w-2.5 ml-0.5" />}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={mergeTarget}
+              onChange={(e) => setMergeTarget(e.target.value)}
+              placeholder="合并为标签名..."
+              maxLength={50}
+              className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+            />
+            <button onClick={handleMerge} disabled={selectedForMerge.length < 2 || !mergeTarget.trim()} className="px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-40">合并</button>
+            <button onClick={() => { setMergeMode(false); setSelectedForMerge([]); }} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground">取消</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {localTags.map(tag => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]"
+              >
+                #{tag}
+                <button onClick={() => removeTag(tag)} className="hover:opacity-70 ml-0.5">
+                  <XIcon className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1.5 mb-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+              placeholder="添加标签..."
+              maxLength={50}
+              className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+              autoFocus
+            />
+            <button onClick={addTag} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors">+</button>
+          </div>
+        </>
+      )}
+      <div className="flex gap-1.5 flex-wrap">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -133,6 +247,16 @@ function TagEditor({
           {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
           完成
         </button>
+        {!mergeMode && localTags.length >= 2 && (
+          <button
+            onClick={() => setMergeMode(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground transition-colors"
+            title="合并同类标签"
+          >
+            <Merge className="h-3 w-3" />
+            合并同类项
+          </button>
+        )}
         <button onClick={handleCancel} className="px-2.5 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground transition-colors">
           取消
         </button>
@@ -140,6 +264,7 @@ function TagEditor({
     </div>
   );
 }
+
 
 export default function CorpusPage() {
   const [entries, setEntries] = useState<CorpusEntry[]>([]);
@@ -186,13 +311,39 @@ export default function CorpusPage() {
     return Array.from(sources);
   }, [materials]);
 
-  const corpusSubTags = useMemo(() => {
-    const scenarios = new Set<string>();
-    entries.forEach(e => { if (e.application_scenario) scenarios.add(e.application_scenario); });
-    return Array.from(scenarios);
+  // Corpus: derive normalized category groups that have at least one entry
+  const corpusCategoryGroups = useMemo(() => {
+    // Collect all tags across all corpus entries (custom_tags)
+    const tagCounts: Record<string, number> = {};
+    entries.forEach(e => {
+      (e.custom_tags || []).forEach(t => {
+        const cat = (() => {
+          for (const g of CORPUS_CATEGORY_GROUPS) {
+            if (g.members.includes(t) || g.members.includes(normalizeTag(t))) return g.label;
+          }
+          return normalizeTag(t);
+        })();
+        tagCounts[cat] = (tagCounts[cat] || 0) + 1;
+      });
+      // Also count application_scenario as a category source
+      const scenario = e.application_scenario;
+      if (scenario) {
+        const cat = (() => {
+          for (const g of CORPUS_CATEGORY_GROUPS) {
+            if (g.members.includes(scenario)) return g.label;
+          }
+          return scenario;
+        })();
+        // Don't double-count scenarios as categories here
+      }
+    });
+    return Object.entries(tagCounts)
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count }));
   }, [entries]);
 
-  const currentSubTags = activeTab === "materials" ? materialSubTags : corpusSubTags;
+  const currentSubTags = activeTab === "materials" ? materialSubTags : [];
 
   // Reset sub-tag when tab changes
   const handleTabChange = (tab: Tab) => {
@@ -216,7 +367,12 @@ export default function CorpusPage() {
 
   const filteredEntries = useMemo(() => {
     let list = entries;
-    if (activeSubTag) list = list.filter(e => e.application_scenario === activeSubTag);
+    // Filter by normalized category: match any tag in the entry that maps to the selected category
+    if (activeSubTag) {
+      list = list.filter(e =>
+        (e.custom_tags || []).some(t => tagMatchesCategory(t, activeSubTag))
+      );
+    }
     if (!search) return list;
     const q = search.toLowerCase();
     return list.filter(e =>
@@ -336,7 +492,7 @@ export default function CorpusPage() {
           </div>
 
           {/* Sub-category chip bar */}
-          {currentSubTags.length > 0 && (
+          {activeTab === "materials" && currentSubTags.length > 0 && (
             <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
               <button
                 onClick={() => setActiveSubTag(null)}
@@ -363,6 +519,36 @@ export default function CorpusPage() {
               ))}
             </div>
           )}
+          {/* Corpus: normalized category groups chip bar */}
+          {activeTab === "corpus" && corpusCategoryGroups.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
+              <button
+                onClick={() => setActiveSubTag(null)}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                  activeSubTag === null
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                }`}
+              >
+                全部
+              </button>
+              {corpusCategoryGroups.map(({ label, count }) => (
+                <button
+                  key={label}
+                  onClick={() => setActiveSubTag(activeSubTag === label ? null : label)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
+                    activeSubTag === label
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                  }`}
+                >
+                  {label}
+                  <span className="opacity-70 text-[10px]">({count})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
         </div>
 
         {/* Search */}
