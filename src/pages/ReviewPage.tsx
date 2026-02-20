@@ -492,16 +492,9 @@ export default function ReviewPage() {
   };
 
   const advanceFromStep = () => {
-    if (stepFailed) {
-      setResults(prev => ({ ...prev, [wordIdx]: false }));
-      resetStep();
-      setBuilderPlaced([]);
-      setBuilderShuffled([]);
-      setStep(0);
-      setWordIdx(i => i + 1);
-      return;
-    }
     if (step < 2) {
+      // Record failure but keep advancing to next step (not skip to next word)
+      if (stepFailed) setResults(prev => ({ ...prev, [wordIdx]: false }));
       resetStep();
       if (step === 1) {
         // Init builder for step 3 with next word context
@@ -510,8 +503,18 @@ export default function ReviewPage() {
       }
       setStep(s => s + 1);
     } else {
-      setResults(prev => ({ ...prev, [wordIdx]: true }));
-      setShowMasteryPrompt(true);
+      // Step 3 done — record pass/fail and show mastery prompt
+      if (stepFailed) {
+        setResults(prev => ({ ...prev, [wordIdx]: false }));
+        resetStep();
+        setBuilderPlaced([]);
+        setBuilderShuffled([]);
+        setStep(0);
+        setWordIdx(i => i + 1);
+      } else {
+        setResults(prev => ({ ...prev, [wordIdx]: true }));
+        setShowMasteryPrompt(true);
+      }
     }
   };
 
@@ -1722,7 +1725,7 @@ export default function ReviewPage() {
                     <button onClick={handleStep1Check} disabled={!selected} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认答案</button>
                   ) : (
                     <button onClick={advanceFromStep} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
-                      {stepFailed ? "下一个词" : "进入第二步"} <ArrowRight className="h-4 w-4" />
+                      进入第二步 <ArrowRight className="h-4 w-4" />
                     </button>
                   )}
                 </div>
@@ -1829,7 +1832,7 @@ export default function ReviewPage() {
                     <button onClick={handleStep2Check} disabled={!selected} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认答案</button>
                   ) : (
                     <button onClick={advanceFromStep} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
-                      {stepFailed ? "下一个词" : "进入第三步"} <ArrowRight className="h-4 w-4" />
+                      进入第三步 <ArrowRight className="h-4 w-4" />
                     </button>
                   )}
                 </div>

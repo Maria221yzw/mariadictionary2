@@ -600,9 +600,11 @@ ${wordList}
 
 **第一步："展示而非讲述"改写 (Show, Don't Tell)**
 - step1.questionType = "show_dont_tell"
-- step1.blandStatement = 一个平淡的陈述句（如 "She was sad"），含目标词近义/原始形式
-- options：A, B, C, D 四个改写版本，格式为 ["A. 改写版本1", "B. 改写版本2", "C. 改写版本3", "D. 改写版本4"]，其中一个通过动作/神态/环境最具画面感地展示情感（包含目标词）
-- answer：最佳改写的完整选项字符串
+- step1.blandStatement = 一个平淡、直接的情感陈述句（如 "She felt melancholy"），用简单动词/形容词直接陈述情感，不含任何文学修辞
+- options：A, B, C, D 四个文学化的描写性改写句，格式为 ["A. 改写版本1", "B. 改写版本2", "C. 改写版本3", "D. 改写版本4"]
+  * 所有四个选项都必须包含目标词（自然嵌入，无需加粗，严禁使用 **word** 标注）
+  * 正确选项（通常为A）通过具体动作、细节或意象"展示"题干中的情感，而非简单重复含义；其余三项为较平淡或语法欠佳的对比版本
+- answer：最佳改写的完整选项字符串（不含任何加粗标记）
 
 **第二步：描写性组句 (Descriptive Sentence Builder)**
 - step2.questionType = "descriptive_builder"
@@ -627,14 +629,14 @@ ${SENTENCE_BUILDER_RULE}
     "wordCn": "枯萎，凋谢；衰退",
     "step1": {
       "questionType": "show_dont_tell",
-      "blandStatement": "The old man was getting weaker and weaker.",
+      "blandStatement": "The old man was getting weaker.",
       "options": [
-        "A. Day by day, his hands **withered** into pale knots of bone, and the light behind his eyes grew thin as winter sun.",
-        "B. The old man was **withering** away slowly, becoming weaker.",
-        "C. He was becoming weak, like something that **withers** in the cold.",
-        "D. His strength was **withering**; he was getting old and frail."
+        "A. Day by day, his hands withered into pale knots of bone, and the light behind his eyes grew thin as winter sun.",
+        "B. The old man was withering away slowly, becoming weaker.",
+        "C. He was becoming weak, like something that withers in the cold.",
+        "D. His strength was withering; he was getting old and frail."
       ],
-      "answer": "A. Day by day, his hands **withered** into pale knots of bone, and the light behind his eyes grew thin as winter sun."
+      "answer": "A. Day by day, his hands withered into pale knots of bone, and the light behind his eyes grew thin as winter sun."
     },
     "step2": {
       "questionType": "descriptive_builder",
@@ -663,8 +665,9 @@ ${SENTENCE_BUILDER_RULE}
 
 规则：
 1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
-2. sentenceFragments 必须恰好且完整地覆盖 step3.answer 句，distractorFragments 为空数组 []
-3. 只返回 JSON 数组，不要任何其他文字`;
+2. step1 options 中严禁使用 **word** 加粗标注，所有选项均为纯文本英文句子
+3. sentenceFragments 必须恰好且完整地覆盖 step3.answer 句，distractorFragments 为空数组 []
+4. 只返回 JSON 数组，不要任何其他文字`;
 }
 
 function buildLiteraryNativePrompt(wordList: string): string {
