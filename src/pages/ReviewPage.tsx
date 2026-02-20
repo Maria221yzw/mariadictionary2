@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, Library, Trophy } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, Library, Trophy, ChevronDown, Save, BookMarked, Pencil, Shuffle, AlignLeft, Wand2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -15,6 +15,51 @@ const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   advanced: "进阶运用",
   native: "母语者水平",
 };
+
+// ===== Question Type Config =====
+type QTypeKey = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching";
+
+interface QTypeConfig {
+  key: QTypeKey;
+  label: string;
+  icon: string;
+  description: string;
+  defaultCount: number;
+}
+
+const ALL_Q_TYPES: QTypeConfig[] = [
+  { key: "recognition",         label: "看英选中",     icon: "👁",  description: "看英文语境，选出最准确的中文含义", defaultCount: 3 },
+  { key: "cloze",               label: "选词填空",     icon: "✏️", description: "英文句子填空，从四个选项中选最佳答案", defaultCount: 3 },
+  { key: "builder",             label: "碎片组句",     icon: "🧩", description: "拖拽英文碎片，还原完整句子", defaultCount: 2 },
+  { key: "error_correction",    label: "语篇纠错",     icon: "🛠", description: "识别句子中故意制造的搭配或语域错误", defaultCount: 2 },
+  { key: "register_matching",   label: "语域风格对齐", icon: "🎭", description: "将口语表达改写为指定正式度等级的句子", defaultCount: 2 },
+  { key: "synonym_nuance",      label: "近义词辨析",   icon: "🔍", description: "在极端精确语境中选出最地道、最不可替代的词", defaultCount: 2 },
+  { key: "definition_matching", label: "英文释义配对", icon: "📖", description: "根据纯英文学术定义，配对最准确的词汇", defaultCount: 2 },
+];
+
+type PracticeConfig = {
+  types: Record<QTypeKey, { enabled: boolean; count: number }>;
+  difficulty: PracticeDifficulty;
+};
+
+const DEFAULT_CONFIG: PracticeConfig = {
+  difficulty: "advanced",
+  types: Object.fromEntries(
+    ALL_Q_TYPES.map(t => [t.key, { enabled: t.key === "recognition" || t.key === "cloze" || t.key === "builder", count: t.defaultCount }])
+  ) as Record<QTypeKey, { enabled: boolean; count: number }>,
+};
+
+function loadSavedConfig(): PracticeConfig | null {
+  try {
+    const raw = localStorage.getItem("practice_config_v2");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveConfig(cfg: PracticeConfig) {
+  localStorage.setItem("practice_config_v2", JSON.stringify(cfg));
+}
 
 // Scene micro-tag colours for the review card header
 const SCENE_TAG_STYLES: Record<string, string> = {
@@ -50,8 +95,8 @@ interface CorpusItem {
   vocab_table: { id: string; word: string; chinese_definition: string } | null;
 }
 
-// ── New 10-question interfaces ───────────────────────────────────────────────
-type QType = "recognition" | "cloze" | "builder";
+// ── New question interfaces ───────────────────────────────────────────────────
+type QType = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching";
 
 interface Q {
   qIndex: number;
@@ -68,6 +113,16 @@ interface Q {
   promptCn?: string;
   builderAnswer?: string;
   sentenceFragments?: string[];
+  // error_correction
+  errorSentence?: string;
+  // register_matching
+  informalSentence?: string;
+  targetRegister?: string;
+  // synonym_nuance
+  synonymContext?: string;
+  synonymPool?: string[];
+  // definition_matching
+  englishDefinition?: string;
   // shared
   explanationCn?: string;
 }
@@ -152,7 +207,13 @@ export default function ReviewPage() {
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
 
   // Practice config state
-  const [practiceDifficulty, setPracticeDifficulty] = useState<PracticeDifficulty>("advanced");
+  const [practiceConfig, setPracticeConfig] = useState<PracticeConfig>(() => loadSavedConfig() ?? DEFAULT_CONFIG);
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [configExpanded, setConfigExpanded] = useState(false);
+  const practiceDifficulty = practiceConfig.difficulty;
+  const setPracticeDifficulty = (d: PracticeDifficulty) =>
+    setPracticeConfig(prev => ({ ...prev, difficulty: d }));
+
 
   // Review state (single word mode)
   const [mode, setMode] = useState<PageMode>("dashboard");
@@ -290,6 +351,9 @@ export default function ReviewPage() {
       toast.error("未检测到选中单词，请重新选择");
       return;
     }
+    // Save config if user wants it as default
+    if (saveAsDefault) saveConfig(practiceConfig);
+
     setLoadingReview(true);
     setWords([]); setWordIdx(0); setQuestionIdx(0);
     setSelected(null); setRevealed(false); setQuestionFailed(false);
@@ -318,6 +382,7 @@ export default function ReviewPage() {
           body: JSON.stringify({
             difficulty: practiceDifficulty,
             wordIds: Array.from(selectedIds),
+            typeConfig: practiceConfig.types,
           }),
         }
       );
@@ -613,30 +678,156 @@ export default function ReviewPage() {
           </div>
 
           {/* Practice Config Panel */}
-          <div className="bg-card border border-border rounded-2xl p-4 mb-5 text-center">
-            <p className="text-xs font-semibold text-foreground mb-1 flex items-center justify-center gap-1.5">
-              <Settings2 className="h-3.5 w-3.5 text-primary" /> 练习配置
-            </p>
-            <p className="text-[10px] text-muted-foreground mb-3 leading-relaxed">
-              系统将根据所选难度，自动为你组合全场景实战练习
-            </p>
-            {/* Difficulty */}
-            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">难度等级</p>
-            <div className="flex gap-1.5 justify-center">
-              {(Object.keys(DIFFICULTY_LABELS) as PracticeDifficulty[]).map(d => (
-                <button
-                  key={d}
-                  onClick={() => setPracticeDifficulty(d)}
-                  className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    practiceDifficulty === d
-                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
-                  }`}
+          <div className="bg-card border border-border rounded-2xl mb-5 overflow-hidden">
+            {/* Header – always visible */}
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+              onClick={() => setConfigExpanded(e => !e)}
+            >
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Settings2 className="h-3.5 w-3.5 text-primary" /> 练习配置
+              </span>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${configExpanded ? "rotate-180" : ""}`} />
+            </button>
+
+            <AnimatePresence>
+              {configExpanded && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
                 >
-                  {DIFFICULTY_LABELS[d]}
-                </button>
-              ))}
-            </div>
+                  <div className="px-4 pb-4 space-y-5 border-t border-border pt-4">
+                    {/* Difficulty */}
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide font-semibold">难度等级</p>
+                      <div className="flex gap-1.5">
+                        {(Object.keys(DIFFICULTY_LABELS) as PracticeDifficulty[]).map(d => (
+                          <button
+                            key={d}
+                            onClick={() => setPracticeDifficulty(d)}
+                            className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                              practiceDifficulty === d
+                                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                : "bg-muted/50 text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+                            }`}
+                          >
+                            {DIFFICULTY_LABELS[d]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Question Type Matrix */}
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2.5 uppercase tracking-wide font-semibold">题型矩阵</p>
+                      <div className="space-y-2">
+                        {ALL_Q_TYPES.map(qt => {
+                          const cfg = practiceConfig.types[qt.key];
+                          return (
+                            <div
+                              key={qt.key}
+                              className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all ${
+                                cfg.enabled ? "border-primary/20 bg-primary/5" : "border-border bg-muted/30"
+                              }`}
+                            >
+                              {/* Toggle */}
+                              <button
+                                onClick={() =>
+                                  setPracticeConfig(prev => ({
+                                    ...prev,
+                                    types: {
+                                      ...prev.types,
+                                      [qt.key]: { ...prev.types[qt.key], enabled: !cfg.enabled },
+                                    },
+                                  }))
+                                }
+                                className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${cfg.enabled ? "bg-primary" : "bg-muted"}`}
+                              >
+                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform ${cfg.enabled ? "left-[18px]" : "left-0.5"}`} />
+                              </button>
+                              {/* Icon + Name */}
+                              <span className="text-base leading-none shrink-0">{qt.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-xs font-semibold ${cfg.enabled ? "text-foreground" : "text-muted-foreground"}`}>{qt.label}</p>
+                                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 line-clamp-1">{qt.description}</p>
+                              </div>
+                              {/* Count Control */}
+                              {cfg.enabled && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() =>
+                                      setPracticeConfig(prev => ({
+                                        ...prev,
+                                        types: {
+                                          ...prev.types,
+                                          [qt.key]: { ...prev.types[qt.key], count: Math.max(1, cfg.count - 1) },
+                                        },
+                                      }))
+                                    }
+                                    className="w-6 h-6 rounded-full border border-border bg-background flex items-center justify-center text-sm text-muted-foreground hover:bg-muted transition-colors"
+                                  >−</button>
+                                  <span className="w-5 text-center text-xs font-bold text-foreground">{cfg.count}</span>
+                                  <button
+                                    onClick={() =>
+                                      setPracticeConfig(prev => ({
+                                        ...prev,
+                                        types: {
+                                          ...prev.types,
+                                          [qt.key]: { ...prev.types[qt.key], count: Math.min(10, cfg.count + 1) },
+                                        },
+                                      }))
+                                    }
+                                    className="w-6 h-6 rounded-full border border-border bg-background flex items-center justify-center text-sm text-muted-foreground hover:bg-muted transition-colors"
+                                  >+</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Save as Default */}
+                    <div className="flex items-center justify-between pt-1 border-t border-border">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <button
+                          onClick={() => setSaveAsDefault(v => !v)}
+                          className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${saveAsDefault ? "bg-primary" : "bg-muted"}`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform ${saveAsDefault ? "left-[18px]" : "left-0.5"}`} />
+                        </button>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Save className="h-3 w-3" /> 下次启动时自动加载此配置
+                        </span>
+                      </label>
+                      <button
+                        onClick={() => { saveConfig(practiceConfig); toast.success("配置已保存"); }}
+                        className="text-[10px] text-primary hover:underline"
+                      >
+                        立即保存
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Always-visible summary strip */}
+            {!configExpanded && (
+              <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+                {ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key].enabled).map(qt => (
+                  <span key={qt.key} className="inline-flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5">
+                    {qt.icon} {qt.label} ×{practiceConfig.types[qt.key].count}
+                  </span>
+                ))}
+                <span className="text-[10px] text-muted-foreground ml-auto">
+                  {DIFFICULTY_LABELS[practiceDifficulty]}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Mode Cards */}
@@ -670,6 +861,17 @@ export default function ReviewPage() {
                     <span className="mt-2 text-[10px] text-muted-foreground/70">
                       {selectedIds.size === 1 ? "将针对选中的 1 个词练习" : selectedIds.size > 1 ? `将针对选中的 ${selectedIds.size} 个词练习` : "请先在下方勾选单词"}
                     </span>
+                    {selectedIds.size > 0 && (() => {
+                      const enabledTypes = ALL_Q_TYPES.filter(qt => practiceConfig.types[qt.key].enabled);
+                      const qPerWord = enabledTypes.reduce((s, qt) => s + practiceConfig.types[qt.key].count, 0);
+                      const total = selectedIds.size * qPerWord;
+                      return (
+                        <span className="mt-1.5 text-[10px] font-medium text-primary flex items-center gap-1">
+                          <Wand2 className="h-3 w-3" />
+                          预计 {total} 道题 · {selectedIds.size} 词 × {qPerWord} 题/词
+                        </span>
+                      );
+                    })()}
                   </button>
                   {reinforceDisabled && (
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-foreground text-background text-[10px] rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover/reinforce:opacity-100 transition-opacity z-10 shadow-md">
@@ -1442,6 +1644,10 @@ export default function ReviewPage() {
     recognition: "看英选义",
     cloze: "选词填空",
     builder: "碎片组句",
+    error_correction: "语篇纠错",
+    register_matching: "语域对齐",
+    synonym_nuance: "近义辨析",
+    definition_matching: "释义配对",
   };
 
   const SCENE_TAG_STYLES_LOCAL: Record<string, string> = {
@@ -1795,10 +2001,227 @@ export default function ReviewPage() {
                 </div>
               </div>
             )}
+
+            {/* ── ERROR CORRECTION: Identify and fix sentence error ── */}
+            {(currentQ.qType === "error_correction") && (
+              <div>
+                <div className="bg-card rounded-2xl p-5 shadow-sm border border-border mb-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="text-base">🛠</span>
+                    <span className="text-xs font-semibold text-foreground">找出并改正句中错误</span>
+                  </div>
+                  <p className="text-sm text-foreground leading-relaxed italic border-l-2 border-destructive/40 pl-3">
+                    {currentQ.errorSentence}
+                  </p>
+                </div>
+                <div className="space-y-2 mb-4">
+                  {(currentQ.options || []).map(opt => {
+                    const isSelected = selected === opt;
+                    const isCorrect = revealed && opt === currentQ.answer;
+                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => !revealed && setSelected(opt)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                          isCorrect ? "border-emerald-400 bg-emerald-400/10 text-emerald-700"
+                          : isWrong ? "border-destructive bg-destructive/10 text-destructive"
+                          : isSelected ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card hover:border-primary/30 text-foreground"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                {revealed && currentQ.explanationCn && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-3">
+                    <p className="text-xs text-primary/90">{currentQ.explanationCn}</p>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  {!revealed ? (
+                    <button onClick={handleMCQCheck} disabled={!selected}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                      <Check className="h-4 w-4" /> 提交答案
+                    </button>
+                  ) : (
+                    <button onClick={advanceQuestion}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
+                      {questionIdx < (currentWord?.questions?.length || 1) - 1 ? <>下一题 <ArrowRight className="h-4 w-4" /></> : "完成本词 ✓"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── REGISTER MATCHING: Rewrite informal to formal register ── */}
+            {(currentQ.qType === "register_matching") && (
+              <div>
+                <div className="bg-card rounded-2xl p-5 shadow-sm border border-border mb-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="text-base">🎭</span>
+                    <span className="text-xs font-semibold text-foreground">语域改写</span>
+                    {currentQ.targetRegister && (
+                      <span className="ml-auto text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5">{currentQ.targetRegister}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">将以下口语表达改写为指定语域：</p>
+                  <p className="text-sm text-foreground italic leading-relaxed">{currentQ.informalSentence}</p>
+                </div>
+                <div className="space-y-2 mb-4">
+                  {(currentQ.options || []).map(opt => {
+                    const isSelected = selected === opt;
+                    const isCorrect = revealed && opt === currentQ.answer;
+                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => !revealed && setSelected(opt)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                          isCorrect ? "border-emerald-400 bg-emerald-400/10 text-emerald-700"
+                          : isWrong ? "border-destructive bg-destructive/10 text-destructive"
+                          : isSelected ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card hover:border-primary/30 text-foreground"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                {revealed && currentQ.explanationCn && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-3">
+                    <p className="text-xs text-primary/90">{currentQ.explanationCn}</p>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  {!revealed ? (
+                    <button onClick={handleMCQCheck} disabled={!selected}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                      <Check className="h-4 w-4" /> 提交答案
+                    </button>
+                  ) : (
+                    <button onClick={advanceQuestion}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
+                      {questionIdx < (currentWord?.questions?.length || 1) - 1 ? <>下一题 <ArrowRight className="h-4 w-4" /></> : "完成本词 ✓"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── SYNONYM NUANCE: Pick the most precise near-synonym ── */}
+            {(currentQ.qType === "synonym_nuance") && (
+              <div>
+                <div className="bg-card rounded-2xl p-5 shadow-sm border border-border mb-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="text-base">🔍</span>
+                    <span className="text-xs font-semibold text-foreground">近义词精准辨析</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">在以下语境中，哪个词最地道、最不可替代？</p>
+                  <p className="text-sm text-foreground leading-relaxed">{currentQ.synonymContext}</p>
+                </div>
+                <div className="space-y-2 mb-4">
+                  {(currentQ.options || []).map(opt => {
+                    const isSelected = selected === opt;
+                    const isCorrect = revealed && opt === currentQ.answer;
+                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => !revealed && setSelected(opt)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                          isCorrect ? "border-emerald-400 bg-emerald-400/10 text-emerald-700"
+                          : isWrong ? "border-destructive bg-destructive/10 text-destructive"
+                          : isSelected ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card hover:border-primary/30 text-foreground"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                {revealed && currentQ.explanationCn && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-3">
+                    <p className="text-xs text-primary/90">{currentQ.explanationCn}</p>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  {!revealed ? (
+                    <button onClick={handleMCQCheck} disabled={!selected}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                      <Check className="h-4 w-4" /> 提交答案
+                    </button>
+                  ) : (
+                    <button onClick={advanceQuestion}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
+                      {questionIdx < (currentWord?.questions?.length || 1) - 1 ? <>下一题 <ArrowRight className="h-4 w-4" /></> : "完成本词 ✓"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── DEFINITION MATCHING: Match word to English definition ── */}
+            {(currentQ.qType === "definition_matching") && (
+              <div>
+                <div className="bg-card rounded-2xl p-5 shadow-sm border border-border mb-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="text-base">📖</span>
+                    <span className="text-xs font-semibold text-foreground">英文释义配对</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">根据以下学术释义，选出对应词汇：</p>
+                  <blockquote className="text-sm text-foreground leading-relaxed border-l-2 border-primary/40 pl-3 italic">
+                    {currentQ.englishDefinition}
+                  </blockquote>
+                </div>
+                <div className="space-y-2 mb-4">
+                  {(currentQ.options || []).map(opt => {
+                    const isSelected = selected === opt;
+                    const isCorrect = revealed && opt === currentQ.answer;
+                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => !revealed && setSelected(opt)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                          isCorrect ? "border-emerald-400 bg-emerald-400/10 text-emerald-700"
+                          : isWrong ? "border-destructive bg-destructive/10 text-destructive"
+                          : isSelected ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-card hover:border-primary/30 text-foreground"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                {revealed && currentQ.explanationCn && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 mb-3">
+                    <p className="text-xs text-primary/90">{currentQ.explanationCn}</p>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  {!revealed ? (
+                    <button onClick={handleMCQCheck} disabled={!selected}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                      <Check className="h-4 w-4" /> 提交答案
+                    </button>
+                  ) : (
+                    <button onClick={advanceQuestion}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
+                      {questionIdx < (currentWord?.questions?.length || 1) - 1 ? <>下一题 <ArrowRight className="h-4 w-4" /></> : "完成本词 ✓"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       )}
     </div>
   );
 }
-
