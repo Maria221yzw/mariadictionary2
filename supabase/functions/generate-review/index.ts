@@ -524,29 +524,32 @@ ${wordList}
 
 **第一步：意象与情感匹配 (Imagery & Mood Matching)**
 - step1.questionType = "imagery_mood"
-- 在 step1.literaryPassage 中给出一段 30-50 词的文学描写（可引自经典英美文学名著，或自创同等风格），营造鲜明的情感氛围
-- options：A, B, C, D 四个中文情感/意象词，格式为 ["A. 荒凉，孤寂", "B. 宁静，祥和", "C. 激昂，振奋", "D. 欢乐，明媚"]，其中包含目标词对应的情感基调
-- answer：正确选项的完整字符串
-- step1.moodNote：说明该意象如何体现此情感基调（中文，30字内）
+- step1.literaryPassage：给出一段 30-50 词的英文文学描写（可引自经典英美文学名著，或自创同等风格），营造鲜明的情感氛围。目标词必须出现在段落中（加粗）。
+- options：A, B, C, D 四个**英文**文学基调形容词（专业文学术语，如 melancholic, desolate, sublime, ominous, elegiac, exuberant 等），每项格式为 "A. melancholic"，其中正确答案必须是最能概括该段落基调的词
+- answer：正确选项的完整字符串（如 "A. melancholic"）
+- step1.moodNote：解析该段落的情感意象与基调（中文，40字内）
 
-**第二步：词汇色彩辨析 (Connotation Distinction)**
+**重要**：options 必须是英文文学形容词，不允许使用中文！
+
+**第二步：文学词汇色彩辨析 (Nuance Cloze)**
 - step2.questionType = "connotation_distinction"
-- step2.prompt = 一个具体的文学场景描述（中文，20字内），如"月光下的湖面"，要求选出最能精准描绘该场景的词
-- options：A, B, C, D 四个英文近义词，格式为 ["A. shimmer", "B. glitter", "C. gleam", "D. shine"]
-- answer：正确选项的完整字符串（目标词必须是正确答案）
-- step2.connotationNote：解析四个词的细微文学色彩差异（中文，60字内）
+- step2.connotationSentence：给出一个完整的具有强烈文学色彩的英文句子，在关键词（目标词或其近义词）处用 ___ 挖空。例："The lake ___ in the silver moonlight, as if the stars had drowned beneath its surface."
+- step2.prompt = step2.connotationSentence（直接使用该句子作为 prompt，让前端渲染挖空效果）
+- options：A, B, C, D 四个英文近义词（语义上相近但文学色彩各异的词），格式为 ["A. shimmered", "B. glittered", "C. gleamed", "D. sparkled"]，正确答案必须是最符合该句文学语境色彩的词（目标词优先）
+- answer：正确选项的完整字符串（如 "A. shimmered"）
+- step2.connotationNote：解析四个词在文学语境下的细微色彩差异（中文，80字内），说明为何正确答案最贴合该场景
 
 **第三步：修辞手法识别 (Rhetorical Device Identification)**
 - step3.questionType = "rhetorical_device"
-- 给出一个含有修辞手法的英文句子（目标词出现其中）
-- step3.promptCn = 该句子的中文翻译及要求："识别这句话使用了哪种修辞手法？"
-- options：A, B, C, D 四个修辞手法选项，格式为 ["A. Metaphor（暗喻）", "B. Simile（明喻）", "C. Personification（拟人）", "D. Alliteration（头韵）"]
-- answer：正确选项的完整字符串
-- step3.answer 同时也是包含目标词的英文例句（加粗目标词）
-- step3.rhetoricalNote：解析该修辞手法的美学效果（中文，40字内）
-- step3.registerFeature = 该词在文学语域的风格特征说明（中文，30字内）
+- step3.rhetoricalSentence：给出一个含有明确修辞手法的英文文学例句（目标词出现其中，加粗）
+- step3.promptCn：该句的中文翻译（仅翻译，不加其他文字）
+- step3.prompt = step3.rhetoricalSentence（前端显示用）
+- options：A, B, C, D 四个修辞手法选项，格式为 ["A. Metaphor（暗喻）", "B. Simile（明喻）", "C. Personification（拟人）", "D. Alliteration（头韵）"]（根据实际例句选择合适的四种修辞手法）
+- answer：正确选项的完整字符串（如 "A. Metaphor（暗喻）"）
+- step3.rhetoricalNote：解析该修辞手法在句中的美学效果（中文，50字内）
+- step3.registerFeature：该词在文学语域的风格特征说明（中文，30字内）
 
-注意：第三步是修辞识别选择题，不需要 sentenceFragments。
+**注意：第三步是修辞识别选择题，严禁提供 sentenceFragments，不需要碎片组句。**
 
 返回 JSON 数组，每个元素格式：
 [
@@ -556,33 +559,37 @@ ${wordList}
     "step1": {
       "questionType": "imagery_mood",
       "literaryPassage": "The moors stretched endlessly before her, a **desolate** expanse of grey heather under a weeping sky. Not a soul stirred; even the wind seemed to mourn.",
-      "options": ["A. 荒凉，孤寂", "B. 宁静，祥和", "C. 激昂，振奋", "D. 欢乐，明媚"],
-      "answer": "A. 荒凉，孤寂",
-      "moodNote": "desolate 与灰色石楠、哭泣的天空共同构筑了荒寒孤绝的哥特式情感基调"
+      "options": ["A. melancholic", "B. serene", "C. exuberant", "D. sublime"],
+      "answer": "A. melancholic",
+      "moodNote": "灰色石楠、哭泣的天空与无风的荒原共同渲染出哥特式的哀恸与孤绝"
     },
     "step2": {
       "questionType": "connotation_distinction",
-      "prompt": "场景：废弃庄园中被雨水打湿的窗玻璃",
-      "options": ["A. desolate", "B. melancholic", "C. gloomy", "D. bleak"],
+      "connotationSentence": "The abandoned estate lay ___ beneath the autumn fog, its crumbling walls exhaling centuries of sorrow.",
+      "prompt": "The abandoned estate lay ___ beneath the autumn fog, its crumbling walls exhaling centuries of sorrow.",
+      "options": ["A. desolate", "B. empty", "C. bare", "D. deserted"],
       "answer": "A. desolate",
-      "connotationNote": "desolate强调彻底的荒废与人迹罕至；melancholic偏向主观哀愁；gloomy侧重光线昏暗；bleak强调严峻的物质匮乏"
+      "connotationNote": "desolate兼具物质荒废与情感孤绝的双重维度，最贴合此处建筑与情感共鸣的文学语境；empty过于平淡；bare偏重物理上的裸露；deserted仅指无人"
     },
     "step3": {
       "questionType": "rhetorical_device",
-      "promptCn": "\"孤独本身就是一片荒原。\" — 识别这句话使用了哪种修辞手法？",
+      "rhetoricalSentence": "Loneliness was a **desolate** moor stretching to the horizon of her heart.",
+      "promptCn": "孤独是一片延伸至她内心地平线的荒原。",
+      "prompt": "Loneliness was a **desolate** moor stretching to the horizon of her heart.",
       "options": ["A. Metaphor（暗喻）", "B. Simile（明喻）", "C. Personification（拟人）", "D. Alliteration（头韵）"],
       "answer": "A. Metaphor（暗喻）",
-      "rhetoricalNote": "暗喻将\"孤独\"直接等同于\"荒原\"，省略比较词，强化了情感的物质化感知，形成强烈的视觉冲击",
+      "rhetoricalNote": "暗喻将抽象的孤独等同于具象的荒原，省略比较词，使情感的空洞感获得空间的物质化呈现",
       "registerFeature": "desolate 是文学英语中描绘情感孤绝与荒野意境的核心词汇，常见于哥特式、浪漫主义作品"
     }
   }
 ]
 
 规则：
-1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
-2. 第三步是选择题（修辞识别），不需要 sentenceFragments
-3. 文学语料优先引用英美名著，或自创同等美学水准的段落
-4. 只返回 JSON 数组，不要任何其他文字`;
+1. step1 options 必须是四个**英文**文学形容词（专业术语），严禁使用中文
+2. step2 必须提供一个完整的英文文学句子（含挖空 ___），options 是四个英文近义词
+3. step3 是选择题（修辞识别），严禁提供 sentenceFragments 字段
+4. 文学语料优先引用英美名著，或自创同等美学水准的段落
+5. 只返回 JSON 数组，不要任何其他文字`;
 }
 
 function buildLiteraryAdvancedPrompt(wordList: string): string {
