@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, Library, Trophy, ChevronDown, Save, BookMarked, Pencil, Shuffle, AlignLeft, Wand2 } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, Library, Trophy, ChevronDown, Save, BookMarked, Pencil, Shuffle, AlignLeft, Wand2, PenLine } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -17,7 +17,7 @@ const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
 };
 
 // ===== Question Type Config =====
-type QTypeKey = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching";
+type QTypeKey = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching" | "translation";
 
 interface QTypeConfig {
   key: QTypeKey;
@@ -35,6 +35,7 @@ const ALL_Q_TYPES: QTypeConfig[] = [
   { key: "register_matching",   label: "语域风格对齐", icon: "🎭", description: "将口语表达改写为指定正式度等级的句子", defaultCount: 2 },
   { key: "synonym_nuance",      label: "近义词辨析",   icon: "🔍", description: "在极端精确语境中选出最地道、最不可替代的词", defaultCount: 2 },
   { key: "definition_matching", label: "英文释义配对", icon: "📖", description: "根据纯英文学术定义，配对最准确的词汇", defaultCount: 2 },
+  { key: "translation",         label: "全句翻译拼写", icon: "🖊️", description: "看中文提示，自由输入完整英文译句，AI实时评分", defaultCount: 2 },
 ];
 
 type PracticeConfig = {
@@ -96,7 +97,7 @@ interface CorpusItem {
 }
 
 // ── New question interfaces ───────────────────────────────────────────────────
-type QType = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching";
+type QType = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching" | "translation";
 
 interface Q {
   qIndex: number;
@@ -123,6 +124,9 @@ interface Q {
   synonymPool?: string[];
   // definition_matching
   englishDefinition?: string;
+  // translation (full sentence translation & writing)
+  chinesePrompt?: string;       // Chinese prompt shown to user
+  translationAnswer?: string;   // Reference English sentence
   // shared
   explanationCn?: string;
 }
@@ -249,6 +253,12 @@ export default function ReviewPage() {
   const [synthRevealed, setSynthRevealed] = useState(false);
   const [synthScoring, setSynthScoring] = useState(false);
   const [synthScore, setSynthScore] = useState<any>(null);
+  // Translation question state
+  const [transInput, setTransInput] = useState("");
+  const [transRevealed, setTransRevealed] = useState(false);
+  const [transScoring, setTransScoring] = useState(false);
+  const [transScore, setTransScore] = useState<any>(null);
+  const transTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("review_onboarding_seen"));
 
   // Fetch vocab
@@ -285,6 +295,10 @@ export default function ReviewPage() {
         const shuffled = [...frags].sort(() => Math.random() - 0.5);
         setBuilderShuffled(shuffled);
         setBuilderPlaced([]);
+      }
+      // Auto-focus textarea for translation questions
+      if (q?.qType === "translation") {
+        setTimeout(() => transTextareaRef.current?.focus(), 80);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -470,10 +484,14 @@ export default function ReviewPage() {
     setQuestionFailed(false);
     setBuilderPlaced([]);
     setBuilderShuffled([]);
+    setTransInput("");
+    setTransRevealed(false);
+    setTransScoring(false);
+    setTransScore(null);
     if (questionIdx < qTotal - 1) {
       setQuestionIdx(q => q + 1);
     } else {
-      // All 10 questions done for this word — show mastery prompt
+      // All questions done for this word — show mastery prompt
       setShowMasteryPrompt(true);
     }
   };
@@ -1648,6 +1666,7 @@ export default function ReviewPage() {
     register_matching: "语域对齐",
     synonym_nuance: "近义辨析",
     definition_matching: "释义配对",
+    translation: "全句翻译",
   };
 
   const SCENE_TAG_STYLES_LOCAL: Record<string, string> = {
@@ -2219,6 +2238,206 @@ export default function ReviewPage() {
                 </div>
               </div>
             )}
+
+            {/* ── TRANSLATION: Full sentence free-writing with AI scoring ── */}
+            {currentQ.qType === "translation" && (() => {
+              const diffWords = (ref: string, user: string) => {
+                const refTokens = ref.replace(/[.!?]$/, "").trim().toLowerCase().split(/\s+/);
+                const userTokens = user.replace(/[.!?]$/, "").trim().toLowerCase().split(/\s+/);
+                return refTokens.map(token => ({
+                  token,
+                  matched: userTokens.includes(token),
+                }));
+              };
+              const refSentence = currentQ.translationAnswer || "";
+              const targetWord = currentWord.word.toLowerCase();
+              const userHasWord = transInput.trim().toLowerCase().includes(targetWord) ||
+                // Allow common inflections: -s, -ed, -ing, -ly
+                [targetWord + "s", targetWord + "ed", targetWord + "ing", targetWord.replace(/e$/, "ing"), targetWord + "ly"]
+                  .some(form => transInput.trim().toLowerCase().includes(form));
+
+              return (
+                <div>
+                  <div className="bg-card rounded-2xl p-5 shadow-sm border border-border mb-4">
+                    <div className="flex items-center gap-1.5 mb-3">
+                      <span className="text-base">🖊️</span>
+                      <span className="text-xs font-semibold text-foreground">全句翻译拼写</span>
+                      <span className="ml-auto text-[10px] bg-primary/10 text-primary rounded-full px-2 py-0.5 border border-primary/20">自由输入</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2.5">根据以下中文，用 <span className="font-semibold text-foreground">{currentWord.word}</span> 写出完整英文句子：</p>
+                    <div className="bg-muted/40 rounded-xl p-4 border border-border/60">
+                      <p className="text-sm text-foreground leading-relaxed font-medium">{currentQ.chinesePrompt}</p>
+                    </div>
+                    {!transRevealed && (
+                      <p className="text-[10px] text-muted-foreground mt-2.5 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-destructive/60 inline-block" />
+                        提交前禁止显示英文原句
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Input area */}
+                  {!transRevealed ? (
+                    <div className="mb-4">
+                      <textarea
+                        ref={transTextareaRef}
+                        value={transInput}
+                        onChange={e => setTransInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && transInput.trim()) {
+                            e.preventDefault();
+                            // trigger submit via button
+                            document.getElementById("trans-submit-btn")?.click();
+                          }
+                        }}
+                        placeholder="在此输入你的英文翻译… (Ctrl+Enter 提交)"
+                        className="w-full bg-background border-2 border-border focus:border-primary/50 rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors resize-none h-28"
+                      />
+                      {transInput.trim() && !userHasWord && (
+                        <p className="text-xs text-destructive mt-1.5 flex items-center gap-1">
+                          <X className="h-3 w-3" /> 请在句子中使用目标词「{currentWord.word}」或其词形变体
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 mb-4">
+                      {/* My answer */}
+                      <div className="bg-card border border-border rounded-xl p-4">
+                        <p className="text-[10px] text-muted-foreground mb-2">我的翻译</p>
+                        <p className="text-sm text-foreground leading-relaxed">{transInput || "（未作答）"}</p>
+                      </div>
+                      {/* Diff view against reference */}
+                      <div className="bg-card border border-border rounded-xl p-4">
+                        <p className="text-[10px] text-muted-foreground mb-2">参考译文（词汇对比）</p>
+                        <p className="text-sm leading-relaxed flex flex-wrap gap-x-1 gap-y-0.5">
+                          {diffWords(refSentence, transInput).map((item, i) => (
+                            <span
+                              key={i}
+                              className={item.matched
+                                ? "text-emerald-600 font-medium"
+                                : "text-destructive underline decoration-destructive/40 underline-offset-2"}
+                            >
+                              {item.token}
+                            </span>
+                          ))}
+                        </p>
+                      </div>
+                      {/* AI Score */}
+                      {transScoring && (
+                        <div className="flex items-center justify-center gap-2 py-4">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          <span className="text-sm text-muted-foreground">AI 正在评分…</span>
+                        </div>
+                      )}
+                      {transScore && !transScoring && (
+                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-xl p-4 space-y-3">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold text-white ${
+                              transScore.score >= 90 ? "bg-emerald-500" : transScore.score >= 75 ? "bg-primary" : transScore.score >= 60 ? "bg-yellow-500" : "bg-destructive"
+                            }`}>
+                              {transScore.score}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-foreground">{transScore.level}</p>
+                              <p className="text-[10px] text-muted-foreground">AI 综合评分</p>
+                            </div>
+                          </div>
+                          {transScore.dimensions && (
+                            <div className="space-y-2">
+                              {transScore.dimensions.map((d: any, i: number) => (
+                                <div key={i}>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <span className="text-[11px] text-foreground font-medium">{d.name}</span>
+                                    <span className="text-[11px] text-muted-foreground">{d.score}/{d.max}</span>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(d.score / d.max) * 100}%` }} />
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">{d.comment}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {transScore.highlights?.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-medium text-primary mb-1">✅ 做得好：</p>
+                              {transScore.highlights.map((h: string, i: number) => (
+                                <p key={i} className="text-[11px] text-muted-foreground">• {h}</p>
+                              ))}
+                            </div>
+                          )}
+                          {transScore.improvements?.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-medium text-foreground mb-1">💡 改进建议：</p>
+                              {transScore.improvements.map((imp: string, i: number) => (
+                                <p key={i} className="text-[11px] text-muted-foreground">• {imp}</p>
+                              ))}
+                            </div>
+                          )}
+                          {transScore.correctedVersion && (
+                            <div className="bg-muted/40 rounded-lg p-3">
+                              <p className="text-[11px] font-medium text-foreground mb-1">📝 修正参考：</p>
+                              <p className="text-xs text-foreground leading-relaxed">{transScore.correctedVersion}</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                      {currentQ.explanationCn && (
+                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
+                          <p className="text-xs text-primary/90">{currentQ.explanationCn}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    {!transRevealed ? (
+                      <button
+                        id="trans-submit-btn"
+                        disabled={!transInput.trim() || !userHasWord}
+                        onClick={async () => {
+                          setTransRevealed(true);
+                          setTransScoring(true);
+                          setTransScore(null);
+                          // Score: 10 if word present, proportional to match rate
+                          const refTokens = refSentence.replace(/[.!?]$/, "").trim().toLowerCase().split(/\s+/);
+                          const userTokens = transInput.replace(/[.!?]$/, "").trim().toLowerCase().split(/\s+/);
+                          const matched = refTokens.filter(t => userTokens.includes(t)).length;
+                          const pts = userHasWord ? Math.round((matched / Math.max(refTokens.length, 1)) * 10) : 0;
+                          setQuestionScores(prev => [...prev, pts]);
+                          showScorePopup(pts);
+                          try {
+                            const { data, error } = await supabase.functions.invoke("score-translation", {
+                              body: {
+                                userTranslation: transInput,
+                                referenceSentence: refSentence,
+                                chinesePrompt: currentQ.chinesePrompt || "",
+                                targetWords: [currentWord.word],
+                              },
+                            });
+                            if (error) throw error;
+                            if (data?.error) throw new Error(data.error);
+                            setTransScore(data);
+                          } catch (e: any) {
+                            console.error(e);
+                            toast.error("评分失败，请重试");
+                          } finally {
+                            setTransScoring(false);
+                          }
+                        }}
+                        className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" /> 提交并评分
+                      </button>
+                    ) : (
+                      <button onClick={advanceQuestion} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
+                        {questionIdx < (currentWord?.questions?.length || 1) - 1 ? <>下一题 <ArrowRight className="h-4 w-4" /></> : "完成本词 ✓"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </motion.div>
         </AnimatePresence>
       )}

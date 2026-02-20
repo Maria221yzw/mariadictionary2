@@ -19,7 +19,7 @@ const SCENE_LABELS: Record<Scene, string> = {
 };
 
 // ─── 10-question sequence: type metadata ─────────────────────────────────────
-type QType = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching";
+type QType = "recognition" | "cloze" | "builder" | "error_correction" | "register_matching" | "synonym_nuance" | "definition_matching" | "translation";
 
 interface Q {
   qIndex: number;
@@ -42,6 +42,9 @@ interface Q {
   synonymPool?: string[];      // 4 near-synonyms
   // definition_matching
   englishDefinition?: string;  // English dictionary definition
+  // translation (full sentence free-writing)
+  chinesePrompt?: string;      // Chinese sentence shown to user
+  translationAnswer?: string;  // Reference English sentence
   // builder fields
   promptCn?: string;
   builderAnswer?: string;
@@ -112,6 +115,10 @@ function buildCustomPrompt(word: string, wordCn: string, difficulty: string, typ
     addSpec("definition_matching", typeConfig.definition_matching.count,
       "英文释义配对 —— 提供目标词的纯英文学术定义（来自Oxford或Merriam-Webster风格）。4选1，选出与该英文释义完全匹配的单词");
   }
+  if (typeConfig.translation?.enabled) {
+    addSpec("translation", typeConfig.translation.count,
+      "全句翻译拼写 —— 提供一个包含目标词中文意思的中文句子（chinesePrompt）。学习者需自由输入完整英文译句。提供地道的参考译文（translationAnswer）。严禁显示任何英文提示");
+  }
 
   if (specs.length === 0) {
     // Fallback: 3 recognition + 4 cloze + 3 builder
@@ -145,6 +152,7 @@ ${specs.join("\n")}
   register_matching: informalSentence, targetRegister, options (4个英文句子), answer, explanationCn
   synonym_nuance: synonymContext(含___), synonymPool (4个英文近义词), options(4个如"A. alter"), answer, explanationCn
   definition_matching: englishDefinition, options (4个英文词), answer, explanationCn
+  translation: chinesePrompt(中文原句，含目标词中文意思), translationAnswer(地道英文参考译文), explanationCn
 
 仅返回 JSON 数组，不含其他文字。`;
 }
