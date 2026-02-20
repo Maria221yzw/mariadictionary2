@@ -747,23 +747,44 @@ export default function ReviewPage() {
           {/* Mode Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {/* Mode A: Individual Mastery */}
-            <button
-              onClick={() => {
-                if (selectedIds.size <= 1) startReview();
-                else startReview();
-              }}
-              disabled={loadingReview || allVocab.length === 0}
-              className="group relative flex flex-col items-start p-4 rounded-2xl border border-border bg-card hover:border-primary/30 hover:shadow-md transition-all text-left disabled:opacity-40"
-            >
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
-                {loadingReview ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Target className="h-5 w-5 text-primary" />}
-              </div>
-              <h3 className="text-sm font-bold text-foreground mb-1">单词强化</h3>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">逐一攻克，深度记忆每个词的词性变形与翻译。</p>
-              <span className="mt-2 text-[10px] text-muted-foreground/70">
-                {selectedIds.size === 1 ? "将针对选中的 1 个词练习" : selectedIds.size > 1 ? `将针对选中的 ${selectedIds.size} 个词练习` : `默认回顾当前等级生词`}
-              </span>
-            </button>
+            {(() => {
+              const reinforceDisabled = selectedIds.size === 0;
+              return (
+                <div className="relative group/reinforce">
+                  <button
+                    onClick={() => {
+                      if (reinforceDisabled) {
+                        toast.error("未检测到选中单词，请重新选择");
+                        return;
+                      }
+                      startReview();
+                    }}
+                    disabled={loadingReview || allVocab.length === 0}
+                    title={reinforceDisabled ? "请先在下方勾选想要练习的单词" : undefined}
+                    className={`w-full flex flex-col items-start p-4 rounded-2xl border transition-all text-left ${
+                      reinforceDisabled
+                        ? "border-border bg-muted/40 opacity-60 cursor-not-allowed"
+                        : "border-primary/30 bg-primary/5 hover:shadow-md hover:border-primary/50 cursor-pointer"
+                    } disabled:opacity-40`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${reinforceDisabled ? "bg-muted" : "bg-primary/10"}`}>
+                      {loadingReview ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Target className={`h-5 w-5 ${reinforceDisabled ? "text-muted-foreground" : "text-primary"}`} />}
+                    </div>
+                    <h3 className="text-sm font-bold text-foreground mb-1">单词强化</h3>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">逐一攻克，深度记忆每个词的词性变形与翻译。</p>
+                    <span className="mt-2 text-[10px] text-muted-foreground/70">
+                      {selectedIds.size === 1 ? "将针对选中的 1 个词练习" : selectedIds.size > 1 ? `将针对选中的 ${selectedIds.size} 个词练习` : "请先在下方勾选单词"}
+                    </span>
+                  </button>
+                  {reinforceDisabled && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-foreground text-background text-[10px] rounded-lg whitespace-nowrap pointer-events-none opacity-0 group-hover/reinforce:opacity-100 transition-opacity z-10 shadow-md">
+                      请先在下方勾选想要练习的单词
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-foreground" />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Mode B: Combined Synergy */}
             <button
