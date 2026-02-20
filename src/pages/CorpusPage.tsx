@@ -147,6 +147,7 @@ export default function CorpusPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("materials");
+  const [activeSubTag, setActiveSubTag] = useState<string | null>(null);
   const [modalWord, setModalWord] = useState<{ word: string; vocabId: string; tags?: string[] } | null>(null);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [expandedMaterial, setExpandedMaterial] = useState<Set<string>>(new Set());
@@ -178,28 +179,54 @@ export default function CorpusPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // Sub-tags derived dynamically from data
+  const materialSubTags = useMemo(() => {
+    const sources = new Set<string>();
+    materials.forEach(m => { if (m.source) sources.add(m.source); });
+    return Array.from(sources);
+  }, [materials]);
+
+  const corpusSubTags = useMemo(() => {
+    const scenarios = new Set<string>();
+    entries.forEach(e => { if (e.application_scenario) scenarios.add(e.application_scenario); });
+    return Array.from(scenarios);
+  }, [entries]);
+
+  const currentSubTags = activeTab === "materials" ? materialSubTags : corpusSubTags;
+
+  // Reset sub-tag when tab changes
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    setActiveSubTag(null);
+    setSearch("");
+  };
+
   const filteredMaterials = useMemo(() => {
-    if (!search) return materials;
+    let list = materials;
+    if (activeSubTag) list = list.filter(m => m.source === activeSubTag);
+    if (!search) return list;
     const q = search.toLowerCase();
-    return materials.filter(m =>
+    return list.filter(m =>
       m.content.toLowerCase().includes(q) ||
       (m.notes || "").toLowerCase().includes(q) ||
       (m.source || "").toLowerCase().includes(q) ||
       (m.tags || []).join(" ").toLowerCase().includes(q)
     );
-  }, [materials, search]);
+  }, [materials, search, activeSubTag]);
 
   const filteredEntries = useMemo(() => {
-    if (!search) return entries;
+    let list = entries;
+    if (activeSubTag) list = list.filter(e => e.application_scenario === activeSubTag);
+    if (!search) return list;
     const q = search.toLowerCase();
-    return entries.filter(e =>
+    return list.filter(e =>
       (e.vocab_table?.word || "").toLowerCase().includes(q) ||
       (e.vocab_table?.chinese_definition || "").toLowerCase().includes(q) ||
       (e.custom_tags || []).join(" ").toLowerCase().includes(q) ||
       (e.personal_notes || "").toLowerCase().includes(q) ||
       (e.source_text || "").toLowerCase().includes(q)
     );
-  }, [entries, search]);
+  }, [entries, search, activeSubTag]);
 
   const handleDeleteCorpus = async (id: string) => {
     const { error } = await supabase.from("corpus_entries").delete().eq("id", id);
@@ -261,10 +288,10 @@ export default function CorpusPage() {
   const currentFiltered = activeTab === "materials" ? filteredMaterials : filteredEntries;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 pb-24">
+    <div className="max-w-3xl mx-auto px-4 pb-24">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between pt-6 pb-4">
           <div className="flex items-center gap-2">
             <Library className="h-5 w-5 text-primary" />
             <h2 className="text-2xl font-display font-bold text-foreground">语料仓库</h2>
@@ -278,36 +305,68 @@ export default function CorpusPage() {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-3 mb-5">
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 p-3.5 rounded-2xl border text-left transition-all ${
-                activeTab === tab.key
-                  ? "bg-primary/8 border-primary/30 ring-1 ring-primary/20"
-                  : "bg-card border-border hover:border-primary/20 hover:bg-muted/30"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className={`${activeTab === tab.key ? "text-primary" : "text-muted-foreground"} transition-colors`}>
-                  {tab.icon}
-                </span>
-                <span className={`text-lg font-bold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
-                  {tab.count}
-                </span>
-              </div>
-              <p className={`text-sm font-semibold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
-                {tab.label}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">{tab.desc}</p>
-            </button>
-          ))}
+        {/* Sticky container: Tabs + Sub-tag chips */}
+        <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm pt-1 pb-3 -mx-4 px-4 border-b border-border/40 mb-4">
+          {/* Tabs */}
+          <div className="flex gap-3 mb-3">
+            {tabs.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`flex-1 p-3.5 rounded-2xl border text-left transition-all ${
+                  activeTab === tab.key
+                    ? "bg-primary/8 border-primary/30 ring-1 ring-primary/20"
+                    : "bg-card border-border hover:border-primary/20 hover:bg-muted/30"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`${activeTab === tab.key ? "text-primary" : "text-muted-foreground"} transition-colors`}>
+                    {tab.icon}
+                  </span>
+                  <span className={`text-lg font-bold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
+                    {tab.count}
+                  </span>
+                </div>
+                <p className={`text-sm font-semibold ${activeTab === tab.key ? "text-foreground" : "text-muted-foreground"}`}>
+                  {tab.label}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{tab.desc}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Sub-category chip bar */}
+          {currentSubTags.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
+              <button
+                onClick={() => setActiveSubTag(null)}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                  activeSubTag === null
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                }`}
+              >
+                全部
+              </button>
+              {currentSubTags.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => setActiveSubTag(activeSubTag === tag ? null : tag)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    activeSubTag === tag
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Search */}
-        <div className="relative mb-4">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
