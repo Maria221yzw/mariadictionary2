@@ -142,7 +142,7 @@ ${specs.join("\n")}
 
 【返回格式】严格 JSON 数组，共 ${totalQ} 个对象，每个对象包含：
 - qIndex (0-based)
-- qType ("recognition"|"cloze"|"builder"|"error_correction"|"register_matching"|"synonym_nuance"|"definition_matching")
+- qType ("recognition"|"cloze"|"builder"|"error_correction"|"register_matching"|"synonym_nuance"|"definition_matching"|"translation")
 - scene ("academic"|"professional"|"colloquial"|"literary"|"exam")
 - 对应题型的字段：
   recognition: contextSentence, options (4个中文), answer, explanationCn
@@ -152,7 +152,7 @@ ${specs.join("\n")}
   register_matching: informalSentence, targetRegister, options (4个英文句子), answer, explanationCn
   synonym_nuance: synonymContext(含___), synonymPool (4个英文近义词), options(4个如"A. alter"), answer, explanationCn
   definition_matching: englishDefinition, options (4个英文词), answer, explanationCn
-  translation: chinesePrompt(中文原句，含目标词中文意思), translationAnswer(地道英文参考译文), explanationCn
+  translation: chinesePrompt(中文原句，必须包含目标词的中文意思), translationAnswer(地道英文参考译文，正确使用目标词), explanationCn
 
 仅返回 JSON 数组，不含其他文字。`;
 }
