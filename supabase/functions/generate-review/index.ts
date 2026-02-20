@@ -30,9 +30,9 @@ const SENTENCE_BUILDER_RULE = `
 **重要规则 - 碎片化组句 (Sentence Builder)**：
 对于所有产出型题目（step3），除了提供 answer 完整句外，还必须提供：
 - step3.sentenceFragments: 将答案句拆分为 4-8 个单词/短语卡片（数组），每张卡片是一个独立的英文词或短语单元
-- step3.distractorFragments: 1-2 个干扰词/短语卡片（数组），不属于正确答案但能迷惑用户
+- **绝对禁止** 提供任何干扰词！所有卡片必须恰好且仅能组成 answer 中的完整句子，实现 100% 词汇覆盖。不要设置 distractorFragments 字段（或设为空数组 []）。
 - 拆分规则：按自然语言节奏拆分，如 ["The government", "implemented", "a series of measures", "aimed at", "ameliorating", "socioeconomic disparities", "between urban", "and rural areas"]
-- 干扰项规则：选择语义相近但不正确的词，如近义词、错误词形、多余的副词等`;
+- 拆分后所有卡片拼接（按正确顺序）必须完整还原 answer 句，无多余词、无遗漏词。`;
 
 // ─── Academic system prompts by difficulty ────────────────────────────────────
 
@@ -90,7 +90,7 @@ ${SENTENCE_BUILDER_RULE}
       "collocationNote": "aimed at ameliorating: aimed at + 动名词，是学术英语中表达政策目标的固定框架",
       "registerFeature": "正式书面语，多见于政策分析与社会科学论文的问题陈述部分",
       "sentenceFragments": ["The government", "implemented", "a series of measures", "aimed at", "ameliorating", "socioeconomic disparities", "between urban", "and rural areas"],
-      "distractorFragments": ["to worsen", "periodically"]
+      "distractorFragments": []
     }
   }
 ]
@@ -100,7 +100,7 @@ ${SENTENCE_BUILDER_RULE}
 2. 学术定义须严谨，不得使用循环定义
 3. step1 options 必须是 A/B/C/D 四选项格式
 4. step2 options 必须是 A/B 两选项格式（对应两句话）
-5. step3 句子须体现真实学术搭配，必须提供 sentenceFragments 和 distractorFragments
+5. step3 句子须体现真实学术搭配，sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 6. 只返回 JSON 数组，不要任何其他文字`;
 }
 
@@ -165,7 +165,7 @@ ${SENTENCE_BUILDER_RULE}
       "connectorNote": "Although 引导让步状语从句，是学术英语中表达有限肯定+转折限制的核心框架",
       "registerFeature": "mitigate 是学术英语高频动词，常见于医学/政策论文的结果与讨论部分",
       "sentenceFragments": ["Although", "the intervention", "successfully mitigated", "the acute inflammatory response", "in test subjects,", "long-term efficacy", "remains uncertain", "without extended longitudinal studies"],
-      "distractorFragments": ["therefore", "despite the limitations"]
+      "distractorFragments": []
     }
   }
 ]
@@ -173,7 +173,7 @@ ${SENTENCE_BUILDER_RULE}
 规则：
 1. step1 options 必须是 A/B/C/D 四选项格式，answer 是完整选项字符串
 2. step2 options 必须是 A/B/C/D 四选项格式，answer 是完整选项字符串（仅词或短词组）
-3. step3 必须提供 sentenceFragments 和 distractorFragments
+3. sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 4. 只返回 JSON 数组，不要任何其他文字`;
 }
 
@@ -332,7 +332,7 @@ ${SENTENCE_BUILDER_RULE}
       "collocationNote": "leverage + 资源类名词：是商务英语高频搭配，传达战略性借力的积极内涵",
       "registerFeature": "职场商务高频词，常见于战略提案、投资报告和商务演示文稿",
       "sentenceFragments": ["We should", "fully leverage", "our existing", "client network", "to accelerate", "market expansion"],
-      "distractorFragments": ["manipulate", "aggressively"]
+      "distractorFragments": []
     }
   }
 ]
@@ -340,7 +340,7 @@ ${SENTENCE_BUILDER_RULE}
 规则：
 1. 每个单词恰好生成一组三步题
 2. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
-3. step3 必须提供 sentenceFragments 和 distractorFragments
+3. sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 4. 只返回 JSON 数组，不要任何其他文字`;
 }
 
@@ -405,7 +405,7 @@ ${SENTENCE_BUILDER_RULE}
       "scenarioNote": "accommodate + 请求类名词体现职业弹性；revert to you 是商务英语回复您的标准表达",
       "registerFeature": "accommodate 在职场中传达合作与弹性，常出现于跨部门沟通和客户服务场景",
       "sentenceFragments": ["We are happy to", "accommodate", "this urgent request.", "Could you please share", "the specific support you need", "so we can", "prioritize accordingly"],
-      "distractorFragments": ["reluctantly", "comply with"]
+      "distractorFragments": []
     }
   }
 ]
@@ -413,7 +413,7 @@ ${SENTENCE_BUILDER_RULE}
 规则：
 1. step1 options 必须是 A/B/C/D 四选项格式
 2. step2 options 必须是 A/B/C/D 四选项格式
-3. step3 必须提供 sentenceFragments 和 distractorFragments
+3. sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 4. 只返回 JSON 数组，不要任何其他文字`;
 }
 
@@ -484,14 +484,14 @@ ${SENTENCE_BUILDER_RULE}
       "idiomExplanation": "pivot 源自篮球运动（单脚转身换方向），在硅谷创业文化中演变为战略转型的标志性词汇",
       "registerFeature": "pivot 是商务英语高频词，尤其在创投、战略咨询和产品管理场景中",
       "sentenceFragments": ["Faced with stagnating traction,", "the founding team", "made a decisive pivot", "— shifting from", "a B2C subscription model", "to an enterprise SaaS solution", "within a single quarter"],
-      "distractorFragments": ["unexpectedly", "failed to adapt"]
+      "distractorFragments": []
     }
   }
 ]
 
 规则：
 1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
-2. step3 必须提供 sentenceFragments 和 distractorFragments
+2. sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 3. 只返回 JSON 数组，不要任何其他文字`;
 }
 
@@ -540,7 +540,7 @@ function buildGenericPrompt(scenarioContext: string, difficultyContext: string, 
       "promptCn": "政府正在采取措施改善农村地区的医疗条件。",
       "answer": "The government is taking measures to **ameliorate** healthcare conditions in rural areas.",
       "sentenceFragments": ["The government", "is taking measures", "to ameliorate", "healthcare conditions", "in rural areas"],
-      "distractorFragments": ["to worsen", "urban"]
+      "distractorFragments": []
     }
   }
 ]
@@ -550,7 +550,7 @@ function buildGenericPrompt(scenarioContext: string, difficultyContext: string, 
 2. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
 3. 干扰项必须是真实词汇/释义，难度相当
 4. 句子要地道自然，严格契合指定场景风格
-5. step3 必须提供 sentenceFragments 和 distractorFragments
+5. sentenceFragments 必须恰好且完整地覆盖 answer 句，distractorFragments 必须为空数组 []
 6. 只返回 JSON 数组，不要其他文字
 
 单词列表：

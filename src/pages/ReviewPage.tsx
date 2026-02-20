@@ -383,8 +383,8 @@ export default function ReviewPage() {
   // ── Sentence Builder helpers ──────────────────────────────────────────────
   const initBuilder = (w: WordReview) => {
     const frags = w.step3.sentenceFragments || [];
-    const dist = w.step3.distractorFragments || [];
-    const all = [...frags, ...dist].sort(() => Math.random() - 0.5);
+    // No distractors — shuffle only the exact fragments
+    const all = [...frags].sort(() => Math.random() - 0.5);
     setBuilderShuffled(all);
     setBuilderPlaced([]);
   };
@@ -419,7 +419,6 @@ export default function ReviewPage() {
   };
 
   const handleStep3Submit = () => {
-    // Score based on sentence builder accuracy
     const frags = currentWord.step3.sentenceFragments || [];
     const isNuance = currentWord.step3.questionType === "nuance_distinction";
     if (isNuance) {
@@ -428,7 +427,7 @@ export default function ReviewPage() {
       showScorePopup(10);
       return;
     }
-    // Check if placed tokens match reference fragments (order matters)
+    // No distractors — score purely on correct ordering of exact fragments
     const correctCount = builderPlaced.filter((f, i) => f === frags[i]).length;
     const hasTargetWord = builderPlaced.some(f =>
       f.toLowerCase().includes(currentWord.word.toLowerCase())
@@ -1819,42 +1818,74 @@ export default function ReviewPage() {
                   </div>
                 )}
 
-                {revealed && (
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 mb-4">
-                    <div className="bg-primary/5 border border-primary/15 rounded-xl p-4">
-                      <p className="text-xs text-muted-foreground mb-1.5">参考答案：</p>
-                      <p className="text-sm text-foreground leading-relaxed">{renderHighlightedAnswer(currentWord.step3.answer)}</p>
-                    </div>
-                    {/* Collocation note */}
-                    {currentWord.step3.collocationNote && (
-                      <div className="bg-accent/30 border border-border rounded-xl p-3">
-                        <p className="text-[10px] text-primary font-medium mb-1">📌 搭配解析</p>
-                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.collocationNote}</p>
+                {revealed && (() => {
+                  const frags = currentWord.step3.sentenceFragments || [];
+                  const isNuance = currentWord.step3.questionType === "nuance_distinction";
+                  const myDraftText = builderPlaced.join(" ");
+                  // Strip ** markers from reference for clean comparison
+                  const refClean = currentWord.step3.answer.replace(/\*\*/g, "");
+                  const isFullyCorrect = !isNuance && myDraftText.trim() === refClean.trim();
+                  // Diff: compare placed frags to correct frags positionally
+                  const renderMyDraft = () => {
+                    if (isNuance || builderPlaced.length === 0) return null;
+                    return (
+                      <div className={`rounded-xl p-4 border ${isFullyCorrect ? "bg-emerald-500/8 border-emerald-500/25" : "bg-destructive/5 border-destructive/20"}`}>
+                        <p className={`text-[10px] font-medium mb-1.5 ${isFullyCorrect ? "text-emerald-600" : "text-destructive"}`}>
+                          {isFullyCorrect ? "✅ 我的拼写 (My Draft)" : "❌ 我的拼写 (My Draft)"}
+                        </p>
+                        <p className="text-sm leading-relaxed flex flex-wrap gap-x-1">
+                          {builderPlaced.map((f, i) => {
+                            const isCorrectPos = f === frags[i];
+                            return (
+                              <span key={i} className={`${isCorrectPos ? "text-emerald-600 font-medium" : "text-destructive underline decoration-destructive/60 underline-offset-2 font-medium"}`}>
+                                {f}
+                              </span>
+                            );
+                          })}
+                        </p>
                       </div>
-                    )}
-                    {/* Logical connector note */}
-                    {currentWord.step3.connectorNote && (
-                      <div className="bg-accent/30 border border-border rounded-xl p-3">
-                        <p className="text-[10px] text-primary font-medium mb-1">🔗 衔接词功能</p>
-                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.connectorNote}</p>
+                    );
+                  };
+                  return (
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 mb-4">
+                      {/* My Draft row */}
+                      {renderMyDraft()}
+                      {/* Reference Answer row */}
+                      <div className="bg-primary/5 border border-primary/15 rounded-xl p-4">
+                        <p className="text-[10px] text-primary font-medium mb-1.5">📖 参考答案 (Reference)</p>
+                        <p className="text-sm text-foreground leading-relaxed">{renderHighlightedAnswer(currentWord.step3.answer)}</p>
                       </div>
-                    )}
-                    {/* Nuance explanation */}
-                    {currentWord.step3.nuanceExplanation && (
-                      <div className="bg-accent/30 border border-border rounded-xl p-3">
-                        <p className="text-[10px] text-primary font-medium mb-1">⚖️ 近义词辨析</p>
-                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{currentWord.step3.nuanceExplanation}</p>
-                      </div>
-                    )}
-                    {/* Register feature (key academic feedback) */}
-                    {currentWord.step3.registerFeature && (
-                      <div className="bg-primary/8 border border-primary/20 rounded-xl p-3">
-                        <p className="text-[10px] text-primary font-semibold mb-1">🎓 语域特征 (Register Feature)</p>
-                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.registerFeature}</p>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
+                      {/* Collocation note */}
+                      {currentWord.step3.collocationNote && (
+                        <div className="bg-accent/30 border border-border rounded-xl p-3">
+                          <p className="text-[10px] text-primary font-medium mb-1">📌 搭配解析</p>
+                          <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.collocationNote}</p>
+                        </div>
+                      )}
+                      {/* Logical connector note */}
+                      {currentWord.step3.connectorNote && (
+                        <div className="bg-accent/30 border border-border rounded-xl p-3">
+                          <p className="text-[10px] text-primary font-medium mb-1">🔗 衔接词功能</p>
+                          <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.connectorNote}</p>
+                        </div>
+                      )}
+                      {/* Nuance explanation */}
+                      {currentWord.step3.nuanceExplanation && (
+                        <div className="bg-accent/30 border border-border rounded-xl p-3">
+                          <p className="text-[10px] text-primary font-medium mb-1">⚖️ 近义词辨析</p>
+                          <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{currentWord.step3.nuanceExplanation}</p>
+                        </div>
+                      )}
+                      {/* Register feature */}
+                      {currentWord.step3.registerFeature && (
+                        <div className="bg-primary/8 border border-primary/20 rounded-xl p-3">
+                          <p className="text-[10px] text-primary font-semibold mb-1">🎓 语域特征 (Register Feature)</p>
+                          <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.registerFeature}</p>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })()}
 
                 <div className="flex gap-2">
                   {!revealed ? (
