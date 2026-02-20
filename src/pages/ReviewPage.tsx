@@ -474,9 +474,19 @@ export default function ReviewPage() {
   const totalQuestions = words.reduce((acc, w) => acc + (w.questions?.length || 0), 0);
   const completedQuestions = wordIdx * 10 + questionIdx;
 
-  // ── Normalize for builder scoring ─────────────────────────────────────────
-  const normalizeForCompare = (s: string) =>
-    s.trim().replace(/\s+/g, " ").replace(/([,;])\s*/g, "$1 ").replace(/[.!?]+$/, "").toLowerCase();
+  // ── Universal string normalizer ───────────────────────────────────────────
+  // Strips surrounding whitespace, collapses internal spaces, lowercases,
+  // removes trailing sentence-ending punctuation, and unifies CJK/ASCII punct.
+  const normalizeForCompare = (s: string): string =>
+    s
+      .trim()
+      .replace(/\s+/g, " ")
+      // Unify CJK punctuation to ASCII equivalents
+      .replace(/[，]/g, ",")
+      .replace(/[。！？；：]/g, (c) => ({ "。": ".", "！": "!", "？": "?", "；": ";", "：": ":" }[c] ?? c))
+      // Strip trailing sentence-ending punctuation
+      .replace(/[.!?,;]+$/, "")
+      .toLowerCase();
 
   const showScorePopup = (points: number) => {
     setScorePopup({ value: points, key: Date.now() });
@@ -484,9 +494,28 @@ export default function ReviewPage() {
     scorePopupTimerRef.current = setTimeout(() => setScorePopup(null), 1500);
   };
 
-  // ── Check MCQ answer (recognition + cloze) ───────────────────────────────
+  // ── MCQ correctness check with normalization ───────────────────────────────
+  // For MCQ types the user clicks an option whose text is stored in `selected`.
+  // The backend `answer` field holds the correct option text. We normalize both
+  // sides to guard against hidden whitespace / case / punctuation differences.
+  const isMCQCorrect = (userSelected: string | null, correctAnswer: string | undefined): boolean => {
+    if (!userSelected || !correctAnswer) return false;
+    const normUser = normalizeForCompare(userSelected);
+    const normCorrect = normalizeForCompare(correctAnswer);
+    const result = normUser === normCorrect;
+    // Debug log so mismatches are immediately visible in DevTools
+    console.debug(
+      "[判题] Original Answer:", correctAnswer,
+      "| Standardized Answer:", normCorrect,
+      "| User Input:", normUser,
+      "| Correct:", result
+    );
+    return result;
+  };
+
+  // ── Check MCQ answer (recognition + cloze + error_correction + register_matching + definition_matching) ──
   const handleMCQCheck = () => {
-    const correct = selected === currentQ?.answer;
+    const correct = isMCQCorrect(selected, currentQ?.answer);
     setRevealed(true);
     setQuestionFailed(!correct);
     const pts = correct ? 10 : 0;
@@ -1833,8 +1862,8 @@ export default function ReviewPage() {
                 {/* Options */}
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map((opt, i) => {
-                    const isCorrect = opt === currentQ.answer;
-                    const isSelected = selected === opt;
+                    const isCorrect = isMCQCorrect(opt, currentQ.answer);
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
                     let optClass = "border-border bg-card hover:border-primary/30";
                     if (revealed) {
                       if (isCorrect) optClass = "border-emerald-500 bg-emerald-500/10";
@@ -1905,8 +1934,8 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map((opt, i) => {
-                    const isCorrect = opt === currentQ.answer;
-                    const isSelected = selected === opt;
+                    const isCorrect = isMCQCorrect(opt, currentQ.answer);
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
                     let optClass = "border-border bg-card hover:border-primary/30";
                     if (revealed) {
                       if (isCorrect) optClass = "border-emerald-500 bg-emerald-500/10";
@@ -1930,7 +1959,7 @@ export default function ReviewPage() {
                   <div className="space-y-2 mb-3">
                     <div className="flex items-start gap-2 bg-card border border-border rounded-xl p-3">
                       <span className="text-[10px] text-muted-foreground shrink-0 pt-0.5">我的答案</span>
-                      <span className={`text-sm font-medium ${selected === currentQ.answer ? "text-emerald-600" : "text-red-500"}`}>
+                      <span className={`text-sm font-medium ${isMCQCorrect(selected, currentQ.answer) ? "text-emerald-600" : "text-red-500"}`}>
                         {selected || "（未作答）"}
                       </span>
                     </div>
@@ -2072,9 +2101,9 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map(opt => {
-                    const isSelected = selected === opt;
-                    const isCorrect = revealed && opt === currentQ.answer;
-                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
+                    const isCorrect = revealed && isMCQCorrect(opt, currentQ.answer);
+                    const isWrong = revealed && isSelected && !isMCQCorrect(opt, currentQ.answer);
                     return (
                       <button
                         key={opt}
@@ -2128,9 +2157,9 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map(opt => {
-                    const isSelected = selected === opt;
-                    const isCorrect = revealed && opt === currentQ.answer;
-                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
+                    const isCorrect = revealed && isMCQCorrect(opt, currentQ.answer);
+                    const isWrong = revealed && isSelected && !isMCQCorrect(opt, currentQ.answer);
                     return (
                       <button
                         key={opt}
@@ -2181,9 +2210,9 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map(opt => {
-                    const isSelected = selected === opt;
-                    const isCorrect = revealed && opt === currentQ.answer;
-                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
+                    const isCorrect = revealed && isMCQCorrect(opt, currentQ.answer);
+                    const isWrong = revealed && isSelected && !isMCQCorrect(opt, currentQ.answer);
                     return (
                       <button
                         key={opt}
@@ -2236,9 +2265,9 @@ export default function ReviewPage() {
                 </div>
                 <div className="space-y-2 mb-4">
                   {(currentQ.options || []).map(opt => {
-                    const isSelected = selected === opt;
-                    const isCorrect = revealed && opt === currentQ.answer;
-                    const isWrong = revealed && isSelected && opt !== currentQ.answer;
+                    const isSelected = selected !== null && normalizeForCompare(selected) === normalizeForCompare(opt);
+                    const isCorrect = revealed && isMCQCorrect(opt, currentQ.answer);
+                    const isWrong = revealed && isSelected && !isMCQCorrect(opt, currentQ.answer);
                     return (
                       <button
                         key={opt}
