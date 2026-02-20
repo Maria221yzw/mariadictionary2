@@ -37,6 +37,19 @@ const DIFFICULTY_PROMPTS: Record<PracticeDifficulty, string> = {
   native: "母语者水平（使用地道表达、复杂句式和微妙语义，接近真实英语环境）",
 };
 
+// ===== Academic Step Metadata =====
+const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
+  definition_matching: "定义辨析",
+  register_distinction: "语域识别",
+  collocation_cloze: "学术搭配",
+  nominalization: "名词化改写",
+  hedging: "语气委婉化",
+  logical_connector: "逻辑衔接",
+  paraphrasing: "摘要重构",
+  register_flip: "语域转换",
+  nuance_distinction: "近义微观辨析",
+};
+
 // ===== Interfaces =====
 interface VocabWord {
   id: string;
@@ -65,9 +78,46 @@ interface WordReview {
   wordCn: string;
   vocabId: string | null;
   masteryLevel: number;
-  step1: { options: string[]; answer: string };
-  step2: { prompt: string; options: string[]; answer: string };
-  step3: { promptCn: string; answer: string };
+  // Academic metadata
+  isAcademic?: boolean;
+  academicDifficulty?: string | null;
+  stepMeta?: [string, string, string] | null;
+  // Step 1 - generic or academic
+  step1: {
+    options: string[];
+    answer: string;
+    // Academic fields
+    questionType?: string;
+    academicDefinition?: string;
+    verbSentence?: string;
+    originalAbstract?: string;
+  };
+  // Step 2 - generic or academic
+  step2: {
+    prompt: string;
+    options: string[];
+    answer: string;
+    // Academic fields
+    questionType?: string;
+    academicRoleExplanation?: string;
+    certaintyContext?: string;
+    informalText?: string;
+    registerContrast?: string;
+  };
+  // Step 3 - generic or academic
+  step3: {
+    promptCn: string;
+    answer: string;
+    // Academic fields
+    questionType?: string;
+    collocationNote?: string;
+    registerFeature?: string;
+    connectorNote?: string;
+    sentenceA?: string;
+    sentenceB?: string;
+    scenario?: string;
+    nuanceExplanation?: string;
+  };
 }
 
 interface NarrativeCloze {
@@ -1138,7 +1188,7 @@ export default function ReviewPage() {
                               )}
                               {synthScore.highlights && synthScore.highlights.length > 0 && (
                                 <div>
-                                  <p className="text-[11px] font-medium text-emerald-600 mb-1">✅ 做得好：</p>
+                                  <p className="text-[11px] font-medium text-primary mb-1">✅ 做得好：</p>
                                   {synthScore.highlights.map((h: string, i: number) => (
                                     <p key={i} className="text-[11px] text-muted-foreground">• {h}</p>
                                   ))}
@@ -1146,7 +1196,7 @@ export default function ReviewPage() {
                               )}
                               {synthScore.improvements && synthScore.improvements.length > 0 && (
                                 <div>
-                                  <p className="text-[11px] font-medium text-amber-600 mb-1">💡 改进建议：</p>
+                                  <p className="text-[11px] font-medium text-foreground mb-1">💡 改进建议：</p>
                                   {synthScore.improvements.map((imp: string, i: number) => (
                                     <p key={i} className="text-[11px] text-muted-foreground">• {imp}</p>
                                   ))}
@@ -1299,15 +1349,20 @@ export default function ReviewPage() {
         <span className="text-xs text-muted-foreground whitespace-nowrap">词 {wordIdx + 1}/{words.length} · 步 {step + 1}/3</span>
       </div>
 
-      {/* Step chips */}
+      {/* Step chips — academic labels when applicable */}
       <div className="flex gap-1.5 mb-6">
-        {[0, 1, 2].map(s => (
-          <div key={s} className={`flex-1 py-1 rounded-lg text-center text-[10px] font-medium transition-colors ${
-            s === step ? "bg-primary text-primary-foreground" : s < step ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-          }`}>
-            {STEP_LABELS[s]}
-          </div>
-        ))}
+        {[0, 1, 2].map(s => {
+          const label = currentWord?.stepMeta?.[s]
+            ? currentWord.stepMeta[s].split(" / ")[0]
+            : STEP_LABELS[s];
+          return (
+            <div key={s} className={`flex-1 py-1 rounded-lg text-center text-[10px] font-medium transition-colors ${
+              s === step ? "bg-primary text-primary-foreground" : s < step ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+            }`}>
+              {label}
+            </div>
+          );
+        })}
       </div>
 
       {/* Mastery upgrade prompt */}
@@ -1349,10 +1404,43 @@ export default function ReviewPage() {
             {/* Step 1 */}
             {step === 0 && (
               <div>
-                <div className="bg-card rounded-2xl p-6 shadow-warm mb-4 text-center">
-                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-primary/10 text-primary">{STEP_SUBLABELS[0]}</span>
-                  <h3 className="text-3xl font-display font-bold text-foreground mb-2">{currentWord.word}</h3>
-                  <p className="text-sm text-muted-foreground">请选择正确的中文释义</p>
+                <div className="bg-card rounded-2xl p-6 shadow-warm mb-4">
+                  {/* Academic type badge */}
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-primary/10 text-primary">
+                      {currentWord.isAcademic && currentWord.step1.questionType
+                        ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step1.questionType] || STEP_SUBLABELS[0]
+                        : STEP_SUBLABELS[0]}
+                    </span>
+                    {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
+                  </div>
+                  <h3 className="text-3xl font-display font-bold text-foreground mb-2 text-center">{currentWord.word}</h3>
+                  {/* Academic definition if available */}
+                  {currentWord.step1.academicDefinition && (
+                    <div className="mt-3 mb-3 p-3 bg-muted/40 rounded-xl border border-border">
+                      <p className="text-[10px] text-primary font-medium mb-1">📘 学术定义（Oxford Academic 风格）</p>
+                      <p className="text-xs text-foreground leading-relaxed italic">{currentWord.step1.academicDefinition}</p>
+                    </div>
+                  )}
+                  {/* Nominalization source sentence */}
+                  {currentWord.step1.verbSentence && (
+                    <div className="mt-3 mb-3 p-3 bg-muted/40 rounded-xl border border-border">
+                      <p className="text-[10px] text-primary font-medium mb-1">✏️ 原句（口语化）</p>
+                      <p className="text-sm text-foreground leading-relaxed">{currentWord.step1.verbSentence}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1.5">▸ 请选出最地道的学术名词化改写版本</p>
+                    </div>
+                  )}
+                  {/* Abstract paraphrasing source */}
+                  {currentWord.step1.originalAbstract && (
+                    <div className="mt-3 mb-3 p-3 bg-muted/40 rounded-xl border border-border">
+                      <p className="text-[10px] text-primary font-medium mb-1">📄 原摘要片段</p>
+                      <p className="text-sm text-foreground leading-relaxed">{currentWord.step1.originalAbstract}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1.5">▸ 请选出学术层次最高的同义升级版本（须含目标词）</p>
+                    </div>
+                  )}
+                  {!currentWord.step1.academicDefinition && !currentWord.step1.verbSentence && !currentWord.step1.originalAbstract && (
+                    <p className="text-sm text-muted-foreground text-center">请选择正确的中文释义</p>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 gap-2 mb-4">
                   {currentWord.step1.options.map(opt => {
@@ -1396,12 +1484,41 @@ export default function ReviewPage() {
             {step === 1 && (
               <div>
                 <div className="bg-card rounded-2xl p-6 shadow-warm mb-4">
-                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-warm-gold/15 text-warm-gold">{STEP_SUBLABELS[1]}</span>
-                  <p className="text-foreground leading-relaxed text-lg">
-                    {currentWord.step2.prompt.split("___").map((part, i, arr) => (
-                      <span key={i}>{part}{i < arr.length - 1 && <span className="inline-block w-24 border-b-2 border-primary/40 mx-1" />}</span>
-                    ))}
-                  </p>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-accent text-accent-foreground">
+                      {currentWord.isAcademic && currentWord.step2.questionType
+                        ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step2.questionType] || STEP_SUBLABELS[1]
+                        : STEP_SUBLABELS[1]}
+                    </span>
+                    {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
+                  </div>
+                  {/* Academic: show informal text for register flip */}
+                  {currentWord.step2.informalText && (
+                    <div className="mb-3 p-3 bg-muted/40 rounded-xl border border-border">
+                      <p className="text-[10px] text-muted-foreground font-medium mb-1">📝 原始非正式记录</p>
+                      <p className="text-sm text-foreground italic">"{currentWord.step2.informalText}"</p>
+                    </div>
+                  )}
+                  {/* Step 2 prompt — split on | for register distinction, ___ for fill-in */}
+                  {currentWord.step2.prompt.includes(" | ") ? (
+                    <div className="space-y-2">
+                      {currentWord.step2.prompt.split(" | ").map((seg, i) => (
+                        <div key={i} className="p-3 bg-muted/40 rounded-xl">
+                          <p className="text-sm text-foreground leading-relaxed">{seg}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-foreground leading-relaxed text-lg">
+                      {currentWord.step2.prompt.split("___").map((part, i, arr) => (
+                        <span key={i}>{part}{i < arr.length - 1 && <span className="inline-block w-24 border-b-2 border-primary/40 mx-1" />}</span>
+                      ))}
+                    </p>
+                  )}
+                  {/* Hedging: certainty context hint */}
+                  {currentWord.step2.certaintyContext && !revealed && (
+                    <p className="text-[10px] text-muted-foreground mt-2.5 italic">💡 参考：{currentWord.step2.certaintyContext}</p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-4">
                   {currentWord.step2.options.map(opt => {
@@ -1427,6 +1544,15 @@ export default function ReviewPage() {
                     <p className="text-sm text-destructive">正确答案：<span className="font-bold">{currentWord.step2.answer}</span></p>
                   </motion.div>
                 )}
+                {/* Academic feedback: register contrast or role explanation */}
+                {revealed && currentWord.isAcademic && (currentWord.step2.academicRoleExplanation || currentWord.step2.registerContrast) && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-3 mb-4">
+                    <p className="text-[10px] text-primary font-medium mb-1">🔍 语域特征解析</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {currentWord.step2.academicRoleExplanation || currentWord.step2.registerContrast}
+                    </p>
+                  </motion.div>
+                )}
                 <div className="flex gap-2">
                   {!revealed ? (
                     <button onClick={handleStep2Check} disabled={!selected} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40">确认答案</button>
@@ -1443,21 +1569,109 @@ export default function ReviewPage() {
             {step === 2 && (
               <div>
                 <div className="bg-card rounded-2xl p-6 shadow-warm mb-4">
-                  <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium mb-4 bg-soft-rose/15 text-soft-rose">{STEP_SUBLABELS[2]}</span>
-                  <p className="text-xs text-muted-foreground mb-2">翻译以下中文（须包含 <span className="font-bold text-primary">{currentWord.word}</span>）</p>
-                  <p className="text-foreground text-lg font-medium leading-relaxed">{currentWord.step3.promptCn}</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-medium bg-primary/8 text-primary border border-primary/20">
+                      {currentWord.isAcademic && currentWord.step3.questionType
+                        ? ACADEMIC_STEP_TYPE_LABELS[currentWord.step3.questionType] || STEP_SUBLABELS[2]
+                        : STEP_SUBLABELS[2]}
+                    </span>
+                    {currentWord.isAcademic && <span className="text-[9px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">🎓 学术专项</span>}
+                  </div>
+                  {/* Logical connector: show both sentences */}
+                  {currentWord.step3.sentenceA && currentWord.step3.sentenceB ? (
+                    <div className="space-y-2 mb-3">
+                      <div className="p-3 bg-muted/40 rounded-xl">
+                        <p className="text-[10px] text-muted-foreground mb-1">句子 A</p>
+                        <p className="text-sm text-foreground leading-relaxed">{currentWord.step3.sentenceA}</p>
+                      </div>
+                      <div className="p-3 bg-muted/40 rounded-xl">
+                        <p className="text-[10px] text-muted-foreground mb-1">句子 B</p>
+                        <p className="text-sm text-foreground leading-relaxed">{currentWord.step3.sentenceB}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">▸ {currentWord.step3.promptCn}</p>
+                    </div>
+                  ) : currentWord.step3.scenario ? (
+                    /* Nuance distinction: show scenario */
+                    <div className="mb-3">
+                      <div className="p-3 bg-muted/40 rounded-xl mb-2">
+                        <p className="text-[10px] text-primary font-medium mb-1">🔬 精确场景</p>
+                        <p className="text-sm text-foreground leading-relaxed">{currentWord.step3.scenario}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{currentWord.step3.promptCn}</p>
+                    </div>
+                  ) : (
+                    /* Generic or collocation cloze */
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {currentWord.step3.questionType === "collocation_cloze"
+                          ? "请将目标词填入以下学术句子的正确位置（参考中文译文）："
+                          : `翻译以下中文（须包含 `}
+                        {currentWord.step3.questionType !== "collocation_cloze" && (
+                          <span className="font-bold text-primary">{currentWord.word}</span>
+                        )}
+                        {currentWord.step3.questionType !== "collocation_cloze" && "）"}
+                      </p>
+                      <p className="text-foreground text-base font-medium leading-relaxed">{currentWord.step3.promptCn}</p>
+                    </div>
+                  )}
+                  {/* Options for nuance distinction */}
+                  {currentWord.step3.questionType === "nuance_distinction" && currentWord.step1.options && !revealed && (
+                    <p className="text-[10px] text-muted-foreground mt-2">（在第一步的选项中已包含候选词汇）</p>
+                  )}
                 </div>
-                <textarea value={translationInput} onChange={(e) => setTranslationInput(e.target.value)} placeholder="输入你的英文翻译..." disabled={revealed}
-                  className="w-full bg-card rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground border outline-none focus:ring-2 focus:ring-primary/20 resize-none h-28 mb-3" />
+
+                {/* For nuance/paraphrasing: no free text input, just reveal */}
+                {currentWord.step3.questionType !== "nuance_distinction" && (
+                  <textarea value={translationInput} onChange={(e) => setTranslationInput(e.target.value)}
+                    placeholder={currentWord.step3.questionType === "collocation_cloze" ? "写出完整的英文句子..." : "输入你的英文翻译..."}
+                    disabled={revealed}
+                    className="w-full bg-card rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground border outline-none focus:ring-2 focus:ring-primary/20 resize-none h-28 mb-3" />
+                )}
+
                 {revealed && (
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/15 rounded-xl p-4 mb-4">
-                    <p className="text-xs text-muted-foreground mb-1.5">参考答案：</p>
-                    <p className="text-sm text-foreground leading-relaxed">{renderHighlightedAnswer(currentWord.step3.answer)}</p>
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 mb-4">
+                    <div className="bg-primary/5 border border-primary/15 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground mb-1.5">参考答案：</p>
+                      <p className="text-sm text-foreground leading-relaxed">{renderHighlightedAnswer(currentWord.step3.answer)}</p>
+                    </div>
+                    {/* Collocation note */}
+                    {currentWord.step3.collocationNote && (
+                      <div className="bg-accent/30 border border-border rounded-xl p-3">
+                        <p className="text-[10px] text-primary font-medium mb-1">📌 搭配解析</p>
+                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.collocationNote}</p>
+                      </div>
+                    )}
+                    {/* Logical connector note */}
+                    {currentWord.step3.connectorNote && (
+                      <div className="bg-accent/30 border border-border rounded-xl p-3">
+                        <p className="text-[10px] text-primary font-medium mb-1">🔗 衔接词功能</p>
+                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.connectorNote}</p>
+                      </div>
+                    )}
+                    {/* Nuance explanation */}
+                    {currentWord.step3.nuanceExplanation && (
+                      <div className="bg-accent/30 border border-border rounded-xl p-3">
+                        <p className="text-[10px] text-primary font-medium mb-1">⚖️ 近义词辨析</p>
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-line">{currentWord.step3.nuanceExplanation}</p>
+                      </div>
+                    )}
+                    {/* Register feature (key academic feedback) */}
+                    {currentWord.step3.registerFeature && (
+                      <div className="bg-primary/8 border border-primary/20 rounded-xl p-3">
+                        <p className="text-[10px] text-primary font-semibold mb-1">🎓 语域特征 (Register Feature)</p>
+                        <p className="text-xs text-foreground leading-relaxed">{currentWord.step3.registerFeature}</p>
+                      </div>
+                    )}
                   </motion.div>
                 )}
+
                 <div className="flex gap-2">
                   {!revealed ? (
-                    <button onClick={() => setRevealed(true)} disabled={!translationInput.trim()} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1">
+                    <button
+                      onClick={() => setRevealed(true)}
+                      disabled={currentWord.step3.questionType !== "nuance_distinction" && !translationInput.trim()}
+                      className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1"
+                    >
                       <Eye className="h-4 w-4" /> 查看参考答案
                     </button>
                   ) : (
@@ -1474,3 +1688,4 @@ export default function ReviewPage() {
     </div>
   );
 }
+
