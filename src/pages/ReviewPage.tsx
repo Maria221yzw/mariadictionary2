@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, FilePlus, Library } from "lucide-react";
+import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2, Library, Trophy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -88,37 +88,48 @@ interface WordReview {
   wordCn: string;
   vocabId: string | null;
   masteryLevel: number;
-  // Academic metadata
+  // Academic / professional metadata
   isAcademic?: boolean;
+  isProfessional?: boolean;
   academicDifficulty?: string | null;
   stepMeta?: [string, string, string] | null;
-  // Step 1 - generic or academic
+  // Step 1
   step1: {
     options: string[];
     answer: string;
-    // Academic fields
     questionType?: string;
     academicDefinition?: string;
     verbSentence?: string;
     originalAbstract?: string;
+    // Professional
+    businessContext?: string;
+    directStatement?: string;
+    negotiationContext?: string;
+    negotiationGoal?: string;
+    strategyNote?: string;
   };
-  // Step 2 - generic or academic
+  // Step 2
   step2: {
     prompt: string;
     options: string[];
     answer: string;
-    // Academic fields
     questionType?: string;
     academicRoleExplanation?: string;
     certaintyContext?: string;
     informalText?: string;
     registerContrast?: string;
+    // Professional
+    emailContext?: string;
+    phrasingNote?: string;
+    negativeScenario?: string;
+    deescalationNote?: string;
+    meetingType?: string;
+    leadershipNote?: string;
   };
-  // Step 3 - generic or academic
+  // Step 3 — now with Sentence Builder data
   step3: {
     promptCn: string;
     answer: string;
-    // Academic fields
     questionType?: string;
     collocationNote?: string;
     registerFeature?: string;
@@ -127,6 +138,15 @@ interface WordReview {
     sentenceB?: string;
     scenario?: string;
     nuanceExplanation?: string;
+    // Sentence Builder
+    sentenceFragments?: string[];
+    distractorFragments?: string[];
+    // Professional
+    situation?: string;
+    scenarioNote?: string;
+    idiomScenario?: string;
+    informalVer?: string;
+    idiomExplanation?: string;
   };
 }
 
@@ -213,11 +233,18 @@ export default function ReviewPage() {
   const [wordIdx, setWordIdx] = useState(0);
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
-  const [translationInput, setTranslationInput] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [stepFailed, setStepFailed] = useState(false);
   const [showMasteryPrompt, setShowMasteryPrompt] = useState(false);
   const [results, setResults] = useState<Record<number, boolean>>({});
+
+  // Scoring state
+  const [questionScores, setQuestionScores] = useState<number[]>([]);
+  const [scorePopup, setScorePopup] = useState<{ value: number; key: number } | null>(null);
+
+  // Sentence Builder state (step 3)
+  const [builderPlaced, setBuilderPlaced] = useState<string[]>([]);
+  const [builderShuffled, setBuilderShuffled] = useState<string[]>([]);
 
   // Combo state
   const [comboData, setComboData] = useState<ComboData | null>(null);
@@ -249,6 +276,12 @@ export default function ReviewPage() {
   }, []);
 
   useEffect(() => { refreshVocab(); }, [refreshVocab]);
+
+  // Init sentence builder whenever we enter step 3
+  useEffect(() => {
+    if (step === 2 && currentWord) initBuilder(currentWord);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, wordIdx]);
 
   // Pre-select word from corpus navigation (URL param: ?vocabId=xxx)
   useEffect(() => {
@@ -311,6 +344,7 @@ export default function ReviewPage() {
   const startReview = async () => {
     setLoadingReview(true);
     setWords([]); setWordIdx(0); setStep(0); resetStep(); setResults({});
+    setQuestionScores([]); setBuilderPlaced([]); setBuilderShuffled([]);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("请先登录"); return; }
@@ -346,18 +380,87 @@ export default function ReviewPage() {
   const allDone = words.length > 0 && wordIdx >= words.length;
   const totalPassed = Object.values(results).filter(Boolean).length;
 
-  const resetStep = () => { setSelected(null); setTranslationInput(""); setRevealed(false); setStepFailed(false); };
-  const handleStep1Check = () => { setRevealed(true); setStepFailed(selected !== currentWord.step1.answer); };
-  const handleStep2Check = () => { setRevealed(true); setStepFailed(selected !== currentWord.step2.answer); };
+  // ── Sentence Builder helpers ──────────────────────────────────────────────
+  const initBuilder = (w: WordReview) => {
+    const frags = w.step3.sentenceFragments || [];
+    const dist = w.step3.distractorFragments || [];
+    const all = [...frags, ...dist].sort(() => Math.random() - 0.5);
+    setBuilderShuffled(all);
+    setBuilderPlaced([]);
+  };
+
+  const resetStep = () => {
+    setSelected(null);
+    setRevealed(false);
+    setStepFailed(false);
+  };
+
+  const showScorePopup = (points: number) => {
+    setScorePopup({ value: points, key: Date.now() });
+    setTimeout(() => setScorePopup(null), 1500);
+  };
+
+  const handleStep1Check = () => {
+    const correct = selected === currentWord.step1.answer;
+    setRevealed(true);
+    setStepFailed(!correct);
+    const pts = correct ? 10 : 0;
+    setQuestionScores(prev => [...prev, pts]);
+    showScorePopup(pts);
+  };
+
+  const handleStep2Check = () => {
+    const correct = selected === currentWord.step2.answer;
+    setRevealed(true);
+    setStepFailed(!correct);
+    const pts = correct ? 10 : 0;
+    setQuestionScores(prev => [...prev, pts]);
+    showScorePopup(pts);
+  };
+
+  const handleStep3Submit = () => {
+    // Score based on sentence builder accuracy
+    const frags = currentWord.step3.sentenceFragments || [];
+    const isNuance = currentWord.step3.questionType === "nuance_distinction";
+    if (isNuance) {
+      setRevealed(true);
+      setQuestionScores(prev => [...prev, 10]);
+      showScorePopup(10);
+      return;
+    }
+    // Check if placed tokens match reference fragments (order matters)
+    const correctCount = builderPlaced.filter((f, i) => f === frags[i]).length;
+    const hasTargetWord = builderPlaced.some(f =>
+      f.toLowerCase().includes(currentWord.word.toLowerCase())
+    );
+    let pts = 0;
+    if (!hasTargetWord) pts = 0;
+    else if (correctCount === frags.length && builderPlaced.length === frags.length) pts = 10;
+    else pts = Math.round((correctCount / Math.max(frags.length, 1)) * 10);
+    setQuestionScores(prev => [...prev, pts]);
+    showScorePopup(pts);
+    setRevealed(true);
+  };
 
   const advanceFromStep = () => {
     if (stepFailed) {
       setResults(prev => ({ ...prev, [wordIdx]: false }));
-      resetStep(); setStep(0); setWordIdx(i => i + 1);
+      resetStep();
+      setBuilderPlaced([]);
+      setBuilderShuffled([]);
+      setStep(0);
+      setWordIdx(i => i + 1);
       return;
     }
-    if (step < 2) { resetStep(); setStep(s => s + 1); }
-    else {
+    if (step < 2) {
+      resetStep();
+      if (step === 1) {
+        // Init builder for step 3 with next word context
+        const nextWord = words[wordIdx];
+        if (nextWord) initBuilder(nextWord);
+      }
+      setStep(s => s + 1);
+    } else {
       setResults(prev => ({ ...prev, [wordIdx]: true }));
       setShowMasteryPrompt(true);
     }
@@ -839,7 +942,7 @@ export default function ReviewPage() {
               {/* Tabs */}
               <div className="flex gap-0 border-b shrink-0">
                 {([
-                  { key: "materials", label: "灵感素材", icon: <FilePlus className="h-3.5 w-3.5" /> },
+                  { key: "materials", label: "灵感素材", icon: <Library className="h-3.5 w-3.5" /> },
                   { key: "corpus", label: "查词沉淀", icon: <BookOpen className="h-3.5 w-3.5" /> },
                 ] as const).map(t => (
                   <button
@@ -1307,19 +1410,47 @@ export default function ReviewPage() {
 
   // ==================== SINGLE REVIEW MODE ====================
 
-  // Completion
+  // Completion — grade dashboard
   if (allDone) {
+    const totalScore = questionScores.reduce((a, b) => a + b, 0);
+    const maxScore = questionScores.length * 10;
+    const pct = maxScore > 0 ? totalScore / maxScore : 0;
+    const grade = pct >= 0.9 ? "S" : pct >= 0.75 ? "A" : pct >= 0.6 ? "B" : "C";
+    const gradeLabel: Record<string, string> = { S: "Excellent! 🏆", A: "Great! 🎉", B: "Good! 👍", C: "Keep Trying 💪" };
+    const gradeColor: Record<string, string> = { S: "text-yellow-500", A: "text-emerald-500", B: "text-primary", C: "text-orange-500" };
+    const gradeBg: Record<string, string> = { S: "bg-yellow-500/10 border-yellow-500/30", A: "bg-emerald-500/10 border-emerald-500/30", B: "bg-primary/10 border-primary/30", C: "bg-orange-500/10 border-orange-500/30" };
     return (
-      <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-          <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-6">
-            <Sparkles className="h-10 w-10 text-primary" />
+      <div className="max-w-lg mx-auto px-4 py-10">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+          <Trophy className="h-12 w-12 text-primary mx-auto mb-4" />
+          <h2 className="text-3xl font-display font-bold text-foreground mb-1">本轮回顾完成！</h2>
+          <p className="text-sm text-muted-foreground mb-6">共 {questionScores.length} 题</p>
+
+          {/* Grade badge */}
+          <div className={`inline-flex flex-col items-center gap-1 px-8 py-5 rounded-2xl border mb-6 ${gradeBg[grade]}`}>
+            <span className={`text-6xl font-display font-black ${gradeColor[grade]}`}>{grade}</span>
+            <span className={`text-sm font-semibold ${gradeColor[grade]}`}>{gradeLabel[grade]}</span>
           </div>
-          <h2 className="text-3xl font-display font-bold text-foreground mb-2">本轮回顾完成！</h2>
-          <p className="text-muted-foreground mb-4">通过 {totalPassed} / {words.length} 词</p>
-          <div className="w-full max-w-xs mx-auto h-2.5 rounded-full bg-muted overflow-hidden mb-8">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${words.length > 0 ? (totalPassed / words.length) * 100 : 0}%` }} />
+
+          {/* Score breakdown */}
+          <div className="bg-card border border-border rounded-2xl p-5 mb-6 text-left">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-semibold text-foreground">得分明细</span>
+              <span className="text-lg font-bold text-primary">{totalScore} / {maxScore}</span>
+            </div>
+            <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden mb-3">
+              <motion.div className={`h-full rounded-full ${grade === "S" ? "bg-yellow-500" : grade === "A" ? "bg-emerald-500" : grade === "B" ? "bg-primary" : "bg-orange-500"}`}
+                initial={{ width: 0 }} animate={{ width: `${pct * 100}%` }} transition={{ duration: 0.8, ease: "easeOut" }} />
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {questionScores.map((s, i) => (
+                <div key={i} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold ${s === 10 ? "bg-emerald-500/15 text-emerald-600" : s > 5 ? "bg-yellow-500/15 text-yellow-600" : s > 0 ? "bg-orange-500/15 text-orange-600" : "bg-destructive/15 text-destructive"}`}>
+                  {s}
+                </div>
+              ))}
+            </div>
           </div>
+
           <div className="flex gap-3 justify-center">
             <button onClick={startReview} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity">
               <RotateCcw className="h-4 w-4" /> 再练一轮
@@ -1336,7 +1467,27 @@ export default function ReviewPage() {
   if (!currentWord) return null;
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24">
+    <div className="max-w-lg mx-auto px-4 py-6 pb-24 relative">
+      {/* Score popup animation */}
+      <AnimatePresence>
+        {scorePopup && (
+          <motion.div
+            key={scorePopup.key}
+            initial={{ opacity: 1, y: 0, scale: 1 }}
+            animate={{ opacity: 0, y: -60, scale: 1.3 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-2xl font-bold text-xl shadow-lg pointer-events-none ${
+              scorePopup.value >= 10 ? "bg-emerald-500 text-white" :
+              scorePopup.value >= 5 ? "bg-yellow-500 text-white" :
+              scorePopup.value > 0 ? "bg-orange-500 text-white" :
+              "bg-destructive text-destructive-foreground"
+            }`}
+          >
+            {scorePopup.value >= 10 ? `+${scorePopup.value} 🎉` : scorePopup.value > 0 ? `+${scorePopup.value}` : "Oops! 😅"}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <button onClick={backToDashboard} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -1630,12 +1781,42 @@ export default function ReviewPage() {
                   )}
                 </div>
 
-                {/* For nuance/paraphrasing: no free text input, just reveal */}
-                {currentWord.step3.questionType !== "nuance_distinction" && (
-                  <textarea value={translationInput} onChange={(e) => setTranslationInput(e.target.value)}
-                    placeholder={currentWord.step3.questionType === "collocation_cloze" ? "写出完整的英文句子..." : "输入你的英文翻译..."}
-                    disabled={revealed}
-                    className="w-full bg-card rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground border outline-none focus:ring-2 focus:ring-primary/20 resize-none h-28 mb-3" />
+{/* Sentence Builder (for all output steps except nuance_distinction MCQ) */}
+                {currentWord.step3.questionType !== "nuance_distinction" && !revealed && (
+                  <div className="mb-4">
+                    <div className="min-h-[64px] bg-card border-2 border-dashed border-primary/30 rounded-xl p-3 flex flex-wrap gap-2 mb-3">
+                      {builderPlaced.length === 0 && (
+                        <p className="text-xs text-muted-foreground self-center w-full text-center">点击下方词卡拼出句子…</p>
+                      )}
+                      {builderPlaced.map((f, i) => (
+                        <button key={`placed-${i}`}
+                          onClick={() => {
+                            setBuilderPlaced(prev => prev.filter((_, idx) => idx !== i));
+                            setBuilderShuffled(prev => [...prev, f]);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-medium hover:bg-destructive/15 hover:border-destructive/30 hover:text-destructive transition-colors"
+                        >{f} ✕</button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mb-2">点击词卡填入，点击已填词卡可移除：</p>
+                    <div className="flex flex-wrap gap-2">
+                      {builderShuffled.map((f, i) => (
+                        <button key={`pool-${i}`}
+                          onClick={() => {
+                            setBuilderPlaced(prev => [...prev, f]);
+                            setBuilderShuffled(prev => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-card border border-border text-foreground text-xs font-medium hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                        >{f}</button>
+                      ))}
+                    </div>
+                    {builderPlaced.length > 0 && (
+                      <button onClick={() => {
+                        const all = [...builderShuffled, ...builderPlaced].sort(() => Math.random() - 0.5);
+                        setBuilderShuffled(all); setBuilderPlaced([]);
+                      }} className="text-xs text-muted-foreground hover:text-foreground mt-2 underline">重置</button>
+                    )}
+                  </div>
                 )}
 
                 {revealed && (
@@ -1678,15 +1859,15 @@ export default function ReviewPage() {
                 <div className="flex gap-2">
                   {!revealed ? (
                     <button
-                      onClick={() => setRevealed(true)}
-                      disabled={currentWord.step3.questionType !== "nuance_distinction" && !translationInput.trim()}
+                      onClick={handleStep3Submit}
+                      disabled={currentWord.step3.questionType !== "nuance_distinction" && builderPlaced.length === 0}
                       className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-1"
                     >
-                      <Eye className="h-4 w-4" /> 查看参考答案
+                      <Check className="h-4 w-4" /> 提交答案
                     </button>
                   ) : (
                     <button onClick={advanceFromStep} className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-1">
-                      完成本词 <Check className="h-4 w-4" />
+                      完成本词 <ArrowRight className="h-4 w-4" />
                     </button>
                   )}
                 </div>
