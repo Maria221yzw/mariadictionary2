@@ -58,6 +58,16 @@ const ACADEMIC_STEP_TYPE_LABELS: Record<string, string> = {
   negotiation_scripting: "谈判博弈模拟",
   visionary_leadership: "领导力演说",
   idiomatic_business: "商务隐喻",
+  // Literary step types
+  imagery_mood: "意象与情感匹配",
+  connotation_distinction: "词汇色彩辨析",
+  rhetorical_device: "修辞手法识别",
+  show_dont_tell: "展示而非讲述",
+  descriptive_builder: "描写性组句",
+  sensory_details: "感官描写",
+  stylistic_imitation: "风格模仿创作",
+  explication: "文本深度细读",
+  perspective_shift: "叙事视角转换",
 };
 
 // ===== Interfaces =====
@@ -418,6 +428,24 @@ export default function ReviewPage() {
     showScorePopup(pts);
   };
 
+  // ── Flexible text normalization for sentence builder scoring ────────────────
+  const normalizeFragment = (s: string): string => {
+    return s
+      .trim()
+      // collapse multiple spaces
+      .replace(/\s+/g, " ")
+      // ensure single space after commas/semicolons
+      .replace(/([,;])\s*/g, "$1 ")
+      .trim();
+  };
+
+  const normalizeForCompare = (s: string): string => {
+    return normalizeFragment(s)
+      // strip trailing punctuation (. ! ?)
+      .replace(/[.!?]+$/, "")
+      .toLowerCase();
+  };
+
   const handleStep3Submit = () => {
     const frags = currentWord.step3.sentenceFragments || [];
     const isNuance = currentWord.step3.questionType === "nuance_distinction";
@@ -427,15 +455,18 @@ export default function ReviewPage() {
       showScorePopup(10);
       return;
     }
-    // No distractors — score purely on correct ordering of exact fragments
-    const correctCount = builderPlaced.filter((f, i) => f === frags[i]).length;
+    // Flexible scoring: normalize both sides before comparing
+    const normalizedPlaced = builderPlaced.map(normalizeForCompare);
+    const normalizedFrags  = frags.map(normalizeForCompare);
+
+    const correctCount = normalizedPlaced.filter((f, i) => f === normalizedFrags[i]).length;
     const hasTargetWord = builderPlaced.some(f =>
-      f.toLowerCase().includes(currentWord.word.toLowerCase())
+      normalizeForCompare(f).includes(currentWord.word.toLowerCase())
     );
     let pts = 0;
     if (!hasTargetWord) pts = 0;
-    else if (correctCount === frags.length && builderPlaced.length === frags.length) pts = 10;
-    else pts = Math.round((correctCount / Math.max(frags.length, 1)) * 10);
+    else if (correctCount === normalizedFrags.length && normalizedPlaced.length === normalizedFrags.length) pts = 10;
+    else pts = Math.round((correctCount / Math.max(normalizedFrags.length, 1)) * 10);
     setQuestionScores(prev => [...prev, pts]);
     showScorePopup(pts);
     setRevealed(true);
