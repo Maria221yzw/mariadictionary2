@@ -715,30 +715,16 @@ export default function ReviewPage() {
           </div>
 
           {/* Practice Config Panel */}
-          <div className="bg-card border border-border rounded-2xl p-4 mb-5">
-            <p className="text-xs font-semibold text-foreground mb-3 flex items-center gap-1.5">
+          <div className="bg-card border border-border rounded-2xl p-4 mb-5 text-center">
+            <p className="text-xs font-semibold text-foreground mb-1 flex items-center justify-center gap-1.5">
               <Settings2 className="h-3.5 w-3.5 text-primary" /> 练习配置
             </p>
-            {/* Scenario */}
-            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">应用场景</p>
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {(Object.keys(SCENARIO_LABELS) as PracticeScenario[]).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setPracticeScenario(s)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    practiceScenario === s
-                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
-                  }`}
-                >
-                  {SCENARIO_LABELS[s]}
-                </button>
-              ))}
-            </div>
+            <p className="text-[10px] text-muted-foreground mb-3 leading-relaxed">
+              系统将根据所选难度，自动为你组合全场景实战练习
+            </p>
             {/* Difficulty */}
             <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">难度等级</p>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 justify-center">
               {(Object.keys(DIFFICULTY_LABELS) as PracticeDifficulty[]).map(d => (
                 <button
                   key={d}
