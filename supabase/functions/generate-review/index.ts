@@ -495,6 +495,251 @@ ${SENTENCE_BUILDER_RULE}
 3. 只返回 JSON 数组，不要任何其他文字`;
 }
 
+// ─── Literary question type metadata per difficulty ───────────────────────────
+const LITERARY_STEP_META: Record<string, [string, string, string]> = {
+  basic: [
+    "意象与情感匹配 / Imagery & Mood",
+    "词汇色彩辨析 / Connotation",
+    "修辞手法识别 / Rhetorical Devices",
+  ],
+  advanced: [
+    "展示而非讲述 / Show Don't Tell",
+    "描写性组句 / Descriptive Builder",
+    "移情与感官描写 / Sensory Details",
+  ],
+  native: [
+    "风格模仿创作 / Stylistic Imitation",
+    "文本深度细读 / Explication",
+    "叙事视角转换 / Perspective Shift",
+  ],
+};
+
+// ─── Literary system prompts by difficulty ────────────────────────────────────
+
+function buildLiteraryBasicPrompt(wordList: string): string {
+  return `你是文学英语练习生成器，面向英文文学阅读、创意写作与翻译实践学习者，当前难度：基础认知。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【基础认知 - 文学语感建立】三步题，严格遵守以下格式：
+
+**第一步：意象与情感匹配 (Imagery & Mood Matching)**
+- step1.questionType = "imagery_mood"
+- 在 step1.literaryPassage 中给出一段 30-50 词的文学描写（可引自经典英美文学名著，或自创同等风格），营造鲜明的情感氛围
+- options：A, B, C, D 四个中文情感/意象词，格式为 ["A. 荒凉，孤寂", "B. 宁静，祥和", "C. 激昂，振奋", "D. 欢乐，明媚"]，其中包含目标词对应的情感基调
+- answer：正确选项的完整字符串
+- step1.moodNote：说明该意象如何体现此情感基调（中文，30字内）
+
+**第二步：词汇色彩辨析 (Connotation Distinction)**
+- step2.questionType = "connotation_distinction"
+- step2.prompt = 一个具体的文学场景描述（中文，20字内），如"月光下的湖面"，要求选出最能精准描绘该场景的词
+- options：A, B, C, D 四个英文近义词，格式为 ["A. shimmer", "B. glitter", "C. gleam", "D. shine"]
+- answer：正确选项的完整字符串（目标词必须是正确答案）
+- step2.connotationNote：解析四个词的细微文学色彩差异（中文，60字内）
+
+**第三步：修辞手法识别 (Rhetorical Device Identification)**
+- step3.questionType = "rhetorical_device"
+- 给出一个含有修辞手法的英文句子（目标词出现其中）
+- step3.promptCn = 该句子的中文翻译及要求："识别这句话使用了哪种修辞手法？"
+- options：A, B, C, D 四个修辞手法选项，格式为 ["A. Metaphor（暗喻）", "B. Simile（明喻）", "C. Personification（拟人）", "D. Alliteration（头韵）"]
+- answer：正确选项的完整字符串
+- step3.answer 同时也是包含目标词的英文例句（加粗目标词）
+- step3.rhetoricalNote：解析该修辞手法的美学效果（中文，40字内）
+- step3.registerFeature = 该词在文学语域的风格特征说明（中文，30字内）
+
+注意：第三步是修辞识别选择题，不需要 sentenceFragments。
+
+返回 JSON 数组，每个元素格式：
+[
+  {
+    "word": "desolate",
+    "wordCn": "荒凉的，孤寂的",
+    "step1": {
+      "questionType": "imagery_mood",
+      "literaryPassage": "The moors stretched endlessly before her, a **desolate** expanse of grey heather under a weeping sky. Not a soul stirred; even the wind seemed to mourn.",
+      "options": ["A. 荒凉，孤寂", "B. 宁静，祥和", "C. 激昂，振奋", "D. 欢乐，明媚"],
+      "answer": "A. 荒凉，孤寂",
+      "moodNote": "desolate 与灰色石楠、哭泣的天空共同构筑了荒寒孤绝的哥特式情感基调"
+    },
+    "step2": {
+      "questionType": "connotation_distinction",
+      "prompt": "场景：废弃庄园中被雨水打湿的窗玻璃",
+      "options": ["A. desolate", "B. melancholic", "C. gloomy", "D. bleak"],
+      "answer": "A. desolate",
+      "connotationNote": "desolate强调彻底的荒废与人迹罕至；melancholic偏向主观哀愁；gloomy侧重光线昏暗；bleak强调严峻的物质匮乏"
+    },
+    "step3": {
+      "questionType": "rhetorical_device",
+      "promptCn": "\"孤独本身就是一片荒原。\" — 识别这句话使用了哪种修辞手法？",
+      "options": ["A. Metaphor（暗喻）", "B. Simile（明喻）", "C. Personification（拟人）", "D. Alliteration（头韵）"],
+      "answer": "A. Metaphor（暗喻）",
+      "rhetoricalNote": "暗喻将\"孤独\"直接等同于\"荒原\"，省略比较词，强化了情感的物质化感知，形成强烈的视觉冲击",
+      "registerFeature": "desolate 是文学英语中描绘情感孤绝与荒野意境的核心词汇，常见于哥特式、浪漫主义作品"
+    }
+  }
+]
+
+规则：
+1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
+2. 第三步是选择题（修辞识别），不需要 sentenceFragments
+3. 文学语料优先引用英美名著，或自创同等美学水准的段落
+4. 只返回 JSON 数组，不要任何其他文字`;
+}
+
+function buildLiteraryAdvancedPrompt(wordList: string): string {
+  return `你是文学英语练习生成器，面向有志于创意写作与文学批评的学习者，当前难度：进阶运用。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【进阶运用 - 描写语言掌握】三步题，严格遵守以下格式：
+
+**第一步："展示而非讲述"改写 (Show, Don't Tell)**
+- step1.questionType = "show_dont_tell"
+- step1.blandStatement = 一个平淡的陈述句（如 "She was sad"），含目标词近义/原始形式
+- options：A, B, C, D 四个改写版本，格式为 ["A. 改写版本1", "B. 改写版本2", "C. 改写版本3", "D. 改写版本4"]，其中一个通过动作/神态/环境最具画面感地展示情感（包含目标词）
+- answer：最佳改写的完整选项字符串
+
+**第二步：描写性组句 (Descriptive Sentence Builder)**
+- step2.questionType = "descriptive_builder"
+- step2.prompt = 给出一组被打散的文学词组，要求选出节奏最优美、修饰语位置最恰当的组合句
+- options：A, B, C, D 四个重组版本，格式为 ["A. 版本1", "B. 版本2", "C. 版本3", "D. 版本4"]（目标词加粗）
+- answer：节奏最佳版本的完整选项字符串
+- step2.rhythmNote：解析获选版本的句式节奏优势（中文，40字内）
+
+**第三步：移情与感官描写 (Empathy & Sensory Details)**
+- step3.questionType = "sensory_details"
+- step3.emotionalTheme = 情感主题（中文，5字内，如"孤独"）
+- step3.promptCn = 要求：调用五感中与目标词最相关的感官，为上述情感主题写一句具有感染力的英文描写（参考答案）
+- step3.answer = 包含目标词的参考英文句子（目标词用 **加粗** 标记）
+- step3.sensoryNote = 解析该句调用了哪种感官，以及美学效果（中文，40字内）
+- step3.registerFeature = 该词在文学语域的风格特征（中文，30字内）
+${SENTENCE_BUILDER_RULE}
+
+返回 JSON 数组格式：
+[
+  {
+    "word": "wither",
+    "wordCn": "枯萎，凋谢；衰退",
+    "step1": {
+      "questionType": "show_dont_tell",
+      "blandStatement": "The old man was getting weaker and weaker.",
+      "options": [
+        "A. Day by day, his hands **withered** into pale knots of bone, and the light behind his eyes grew thin as winter sun.",
+        "B. The old man was **withering** away slowly, becoming weaker.",
+        "C. He was becoming weak, like something that **withers** in the cold.",
+        "D. His strength was **withering**; he was getting old and frail."
+      ],
+      "answer": "A. Day by day, his hands **withered** into pale knots of bone, and the light behind his eyes grew thin as winter sun."
+    },
+    "step2": {
+      "questionType": "descriptive_builder",
+      "prompt": "词组：[once-proud / the roses / in silence / withered / along the garden wall]",
+      "options": [
+        "A. The once-proud roses **withered** in silence along the garden wall.",
+        "B. Along the garden wall, in silence, the once-proud roses **withered**.",
+        "C. The roses, once-proud, **withered** along the garden wall in silence.",
+        "D. **Withered** in silence, the once-proud roses along the garden wall."
+      ],
+      "answer": "A. The once-proud roses **withered** in silence along the garden wall.",
+      "rhythmNote": "前置修饰语 once-proud 形成记忆中的对比；in silence 置于动词后，让凋谢的动作充满了无声的仪式感"
+    },
+    "step3": {
+      "questionType": "sensory_details",
+      "emotionalTheme": "失落",
+      "promptCn": "以"失落"为情感主题，调用嗅觉或触觉，写一句含有 wither 的感染力描写",
+      "answer": "The scent of **withered** jasmine clung to her collar — a ghost of sweetness she could never quite release.",
+      "sensoryNote": "嗅觉（scent）唤起记忆，**withered** 修饰茉莉暗指消逝的美好，ghost of sweetness 将失落物质化为萦绕不去的幽灵",
+      "registerFeature": "wither 在文学语域中兼具视觉与情感双重意象，常出现于哥特式、象征主义及现代诗歌",
+      "sentenceFragments": ["The scent of", "withered jasmine", "clung to her collar", "— a ghost of sweetness", "she could never quite release"],
+      "distractorFragments": []
+    }
+  }
+]
+
+规则：
+1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
+2. sentenceFragments 必须恰好且完整地覆盖 step3.answer 句，distractorFragments 为空数组 []
+3. 只返回 JSON 数组，不要任何其他文字`;
+}
+
+function buildLiteraryNativePrompt(wordList: string): string {
+  return `你是文学英语练习生成器，面向文学批评、创意写作与深度阅读的高阶学习者，当前难度：母语者水平。以下是待练习的单词列表：
+${wordList}
+
+对每个单词生成【母语者水平 - 大师风格与深度文本分析】三步题：
+
+**第一步：风格模仿创作 (Stylistic Imitation)**
+- step1.questionType = "stylistic_imitation"
+- step1.authorStyle = 一位经典作家的风格标签（英文，15字内，如 "Hemingway's iceberg minimalism"）
+- step1.styleDescription = 对该风格的简要描述（中文，30字内）
+- options：A, B, C, D 四段模仿同一作家风格围绕同一主题的写作，格式为 ["A. 文段1", "B. 文段2", "C. 文段3", "D. 文段4"]，仅一段最精准地体现该风格且自然地融入目标词
+- answer：最佳风格模仿的完整选项字符串
+
+**第二步：文本深度细读 (Explication de Texte Fragment)**
+- step2.questionType = "explication"
+- step2.literaryFragment = 一段 30-50 词的高难度文学选段（现代诗歌、意识流片段或意象派散文），包含目标词
+- step2.prompt = "请选出对以下选段中目标词及意象的最深刻解读："
+- options：A, B, C, D 四个解读选项，格式为 ["A. 解读1", "B. 解读2", "C. 解读3", "D. 解读4"]，从多层含义和美学效果角度进行深度解读
+- answer：最深刻解读的完整选项字符串
+- step2.aestheticNote：补充说明该解读的美学价值所在（中文，40字内）
+
+**第三步：叙事视角转换 (Narrative Perspective Shift)**
+- step3.questionType = "perspective_shift"
+- step3.thirdPersonPassage = 一段 30-40 词的第三人称描写（包含目标词）
+- step3.promptCn = "将以上第三人称描写改写为第一人称内心独白，保留目标词，并深化叙事声音的情感张力"
+- step3.answer = 最佳第一人称改写（目标词用 **加粗** 标记）
+- step3.perspectiveNote = 解析视角转换对叙事声音的改变（中文，40字内）
+- step3.registerFeature = 该词在文学语域的高阶风格特征（中文，30字内）
+${SENTENCE_BUILDER_RULE}
+
+返回 JSON 数组格式：
+[
+  {
+    "word": "ephemeral",
+    "wordCn": "短暂的，转瞬即逝的",
+    "step1": {
+      "questionType": "stylistic_imitation",
+      "authorStyle": "Virginia Woolf's stream of consciousness",
+      "styleDescription": "伍尔夫式：意识流动、感官叠加、时间非线性、女性内省视角",
+      "options": [
+        "A. She thought — or did not think, only felt — how **ephemeral** everything was: the tea cooling in the cup, the light on the wall, Richard, all of it dissolving before she could name what held her.",
+        "B. Beauty is **ephemeral**. I stood there, watching the sunset fade, and I knew nothing lasts. That is the truth of things.",
+        "C. The **ephemeral** quality of the moment struck her as she looked at the flowers. They would die soon, she realized, just like everything else.",
+        "D. She said to herself: all is **ephemeral**. The flowers, the light, her own thoughts — gone before she could catch them."
+      ],
+      "answer": "A. She thought — or did not think, only felt — how **ephemeral** everything was: the tea cooling in the cup, the light on the wall, Richard, all of it dissolving before she could name what held her."
+    },
+    "step2": {
+      "questionType": "explication",
+      "literaryFragment": "What is love? A breath, **ephemeral** as fog on glass — pressed to the surface for one urgent moment, then gone, leaving only the ghost of warmth on cold transparency.",
+      "prompt": "请选出对以上选段中 ephemeral 及其周边意象的最深刻解读：",
+      "options": [
+        "A. 选段以雾气喻爱情，ephemeral 在此强化了爱的短暂性；\"ghost of warmth\"构成悖论式意象——消逝之物留下可感的痕迹，暗示记忆比爱情本身更持久，这才是选段的真正主题。",
+        "B. 作者用比喻说明爱情是短暂的，like fog 是明喻，ephemeral 是形容词修饰 fog，整体表达了悲观主义的爱情观。",
+        "C. ephemeral 意思是短暂，与 fog 搭配说明爱情像雾一样容易消散，cold transparency 象征冷漠，体现了现代主义对情感的疏离态度。",
+        "D. 选段采用明喻手法，将爱情比作玻璃上的雾，说明爱情不真实、不稳定，ephemeral 是主旨词，揭示虚无主义哲学。"
+      ],
+      "answer": "A. 选段以雾气喻爱情，ephemeral 在此强化了爱的短暂性...",
+      "aestheticNote": "最深刻的解读不止于\"短暂\"本义，而是挖掘出悖论张力：消逝之物留下痕迹，让ephemeral承载了比字面更复杂的时间哲学"
+    },
+    "step3": {
+      "questionType": "perspective_shift",
+      "thirdPersonPassage": "She lingered in the garden, aware that the cherry blossoms were **ephemeral**, and that she too would someday be a memory in someone else's story.",
+      "promptCn": "将以上第三人称描写改写为第一人称内心独白，保留 ephemeral，并深化叙事声音的情感张力",
+      "answer": "I linger here, knowing these blossoms are **ephemeral** — knowing I, too, am someone else's story in the making, a footnote already fading at the edges.",
+      "perspectiveNote": "第一人称将客观陈述变为当下的自我凝视；\"I, too\"引入主体对自身消逝的正视，情感张力从旁观的哀愁升级为直面死亡的存在主义意识",
+      "registerFeature": "ephemeral 是文学与哲学双栖词汇，在意识流、自然书写及存在主义文学中均有高频出现，携带显著的时间哲学维度",
+      "sentenceFragments": ["I linger here,", "knowing these blossoms", "are ephemeral", "— knowing I, too,", "am someone else's story", "in the making,", "a footnote already", "fading at the edges"],
+      "distractorFragments": []
+    }
+  }
+]
+
+规则：
+1. 所有 options 必须是 A/B/C/D 格式，answer 是完整选项字符串
+2. sentenceFragments 必须恰好且完整地覆盖 step3.answer 句，distractorFragments 为空数组 []
+3. 文学选段须具备真实的美学水准，避免平淡的练习体语言
+4. 只返回 JSON 数组，不要任何其他文字`;
+}
+
 // ─── Generic (non-academic) system prompt ────────────────────────────────────
 
 function buildGenericPrompt(scenarioContext: string, difficultyContext: string, wordList: string): string {
@@ -638,6 +883,7 @@ serve(async (req) => {
     // ─── Choose prompt strategy ───────────────────────────────────────────────
     const isAcademic = scenario === "academic";
     const isProfessional = scenario === "professional";
+    const isLiterary = scenario === "literary";
     let systemPrompt: string;
     let stepMeta: [string, string, string] | null = null;
 
@@ -661,6 +907,16 @@ serve(async (req) => {
       } else {
         systemPrompt = buildProfessionalAdvancedPrompt(wordList);
       }
+    } else if (isLiterary) {
+      const diff = difficulty as "basic" | "advanced" | "native";
+      stepMeta = LITERARY_STEP_META[diff] || LITERARY_STEP_META.advanced;
+      if (diff === "basic") {
+        systemPrompt = buildLiteraryBasicPrompt(wordList);
+      } else if (diff === "native") {
+        systemPrompt = buildLiteraryNativePrompt(wordList);
+      } else {
+        systemPrompt = buildLiteraryAdvancedPrompt(wordList);
+      }
     } else {
       const scenarioContext = scenarioPrompt || "通用英语学习语境";
       const difficultyContext = difficultyPrompt || "进阶运用难度";
@@ -683,6 +939,8 @@ serve(async (req) => {
               ? `请为以下单词生成学术专项练习题（按上方格式）：\n${wordList}`
               : isProfessional
               ? `请为以下单词生成职场商务专项练习题（按上方格式）：\n${wordList}`
+              : isLiterary
+              ? `请为以下单词生成文学表达专项练习题（按上方格式）：\n${wordList}`
               : `请为以下单词生成三阶段复习题：\n${wordList}`,
           },
         ],
@@ -726,8 +984,10 @@ serve(async (req) => {
         stepMeta: stepMeta || null,
         isAcademic,
         isProfessional,
+        isLiterary,
         academicDifficulty: isAcademic ? difficulty : null,
         professionalDifficulty: isProfessional ? difficulty : null,
+        literaryDifficulty: isLiterary ? difficulty : null,
       };
     });
 
