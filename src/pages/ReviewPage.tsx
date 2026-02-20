@@ -3,9 +3,39 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Check, X, ArrowRight, RotateCcw, Loader2, BookOpen, ChevronUp, Eye, Layers, Settings2, Lightbulb, Target, Link2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Checkbox } from "@/components/ui/checkbox";
 import MasterySelector from "@/components/MasterySelector";
+
+// ===== Practice Config Types =====
+type PracticeScenario = "academic" | "professional" | "colloquial" | "literary";
+type PracticeDifficulty = "basic" | "advanced" | "native";
+
+const SCENARIO_LABELS: Record<PracticeScenario, string> = {
+  academic: "🎓 高阶学术",
+  professional: "💼 职场商务",
+  colloquial: "💬 地道口语",
+  literary: "📖 文学表达",
+};
+
+const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
+  basic: "基础认知",
+  advanced: "进阶运用",
+  native: "母语者水平",
+};
+
+const SCENARIO_PROMPTS: Record<PracticeScenario, string> = {
+  academic: "正式学术语境（论文写作、GRE/IELTS 作文，使用高级词汇和复杂句式）",
+  professional: "职场商务语境（邮件往来、会议发言、商务洽谈，语气正式但不过于学术）",
+  colloquial: "地道口语语境（影视台词、街头俚语、非正式社交，自然流畅）",
+  literary: "文学创意语境（原著阅读风格、创意写作、翻译实践，注重语言美感）",
+};
+
+const DIFFICULTY_PROMPTS: Record<PracticeDifficulty, string> = {
+  basic: "基础认知难度（句子结构简单，词汇常见，侧重识别与理解）",
+  advanced: "进阶运用难度（句子有一定复杂度，考察词语的灵活运用）",
+  native: "母语者水平（使用地道表达、复杂句式和微妙语义，接近真实英语环境）",
+};
 
 // ===== Interfaces =====
 interface VocabWord {
@@ -79,6 +109,7 @@ const COMBO_PHASE_LABELS: Record<ComboPhase, string> = {
 
 export default function ReviewPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // Dashboard state
   const [allVocab, setAllVocab] = useState<VocabWord[]>([]);
@@ -86,6 +117,10 @@ export default function ReviewPage() {
   const [activeMastery, setActiveMastery] = useState<number | null>(null);
   const [includeMastered, setIncludeMastered] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Practice config state
+  const [practiceScenario, setPracticeScenario] = useState<PracticeScenario>("academic");
+  const [practiceDifficulty, setPracticeDifficulty] = useState<PracticeDifficulty>("advanced");
 
   // Review state (single word mode)
   const [mode, setMode] = useState<PageMode>("dashboard");
@@ -130,6 +165,17 @@ export default function ReviewPage() {
   }, []);
 
   useEffect(() => { refreshVocab(); }, [refreshVocab]);
+
+  // Pre-select word from corpus navigation (URL param: ?vocabId=xxx)
+  useEffect(() => {
+    const vocabId = searchParams.get("vocabId");
+    if (vocabId && !loadingVocab) {
+      setSelectedIds(new Set([vocabId]));
+      // Auto-expand the mastery level of the word
+      const word = allVocab.find(v => v.id === vocabId);
+      if (word) setActiveMastery(word.mastery_level);
+    }
+  }, [searchParams, loadingVocab, allVocab]);
 
   const masteryStats = useMemo(() => {
     const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -186,6 +232,13 @@ export default function ReviewPage() {
       if (!session) { toast.error("请先登录"); return; }
       const { data, error } = await supabase.functions.invoke("generate-review", {
         headers: { Authorization: `Bearer ${session.access_token}` },
+        body: {
+          scenario: practiceScenario,
+          difficulty: practiceDifficulty,
+          scenarioPrompt: SCENARIO_PROMPTS[practiceScenario],
+          difficultyPrompt: DIFFICULTY_PROMPTS[practiceDifficulty],
+          wordIds: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
+        },
       });
       if (error) throw error;
       if (data.empty) { toast.error("没有可复习的单词"); return; }
@@ -372,6 +425,47 @@ export default function ReviewPage() {
             </button>
           </div>
 
+          {/* Practice Config Panel */}
+          <div className="bg-card border border-border rounded-2xl p-4 mb-5">
+            <p className="text-xs font-semibold text-foreground mb-3 flex items-center gap-1.5">
+              <Settings2 className="h-3.5 w-3.5 text-primary" /> 练习配置
+            </p>
+            {/* Scenario */}
+            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">应用场景</p>
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {(Object.keys(SCENARIO_LABELS) as PracticeScenario[]).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setPracticeScenario(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                    practiceScenario === s
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+                  }`}
+                >
+                  {SCENARIO_LABELS[s]}
+                </button>
+              ))}
+            </div>
+            {/* Difficulty */}
+            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wide">难度等级</p>
+            <div className="flex gap-1.5">
+              {(Object.keys(DIFFICULTY_LABELS) as PracticeDifficulty[]).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setPracticeDifficulty(d)}
+                  className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                    practiceDifficulty === d
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+                  }`}
+                >
+                  {DIFFICULTY_LABELS[d]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Mode Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {/* Mode A: Individual Mastery */}
@@ -440,6 +534,7 @@ export default function ReviewPage() {
               </motion.div>
             )}
           </AnimatePresence>
+
 
           {/* Word list for selected mastery level */}
           <AnimatePresence>
