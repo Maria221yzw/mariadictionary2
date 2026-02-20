@@ -32,11 +32,17 @@ export interface AIWordData {
 }
 
 interface HistoryItem {
-  word: string;
+  word: string;         // The original query (Chinese or English)
   pos: string;
   meaningCn: string;
+  meaningEn?: string;   // For Chinese queries: the English word result
+  isChinese?: boolean;
   timestamp: number;
   lookupCount?: number;
+}
+
+function isChinese(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
 }
 
 const HISTORY_KEY = "search_history";
@@ -63,13 +69,21 @@ export default function SearchPage() {
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
   const navigate = useNavigate();
 
-  const addToHistory = useCallback((data: AIWordData, lookupCount?: number) => {
+  const addToHistory = useCallback((originalQuery: string, data: AIWordData, lookupCount?: number) => {
+    const queriedInChinese = isChinese(originalQuery);
     setHistory((prev) => {
-      const filtered = prev.filter((h) => h.word.toLowerCase() !== data.word.toLowerCase());
+      // Deduplicate by original query (case-insensitive for English)
+      const filtered = prev.filter((h) =>
+        queriedInChinese
+          ? h.word !== originalQuery
+          : h.word.toLowerCase() !== originalQuery.toLowerCase()
+      );
       const item: HistoryItem = {
-        word: data.word,
+        word: queriedInChinese ? originalQuery : data.word,
         pos: data.definitions?.[0]?.pos || "",
-        meaningCn: data.coreDefinition || data.definitions?.[0]?.meaningCn || "",
+        meaningCn: queriedInChinese ? "" : (data.coreDefinition || data.definitions?.[0]?.meaningCn || ""),
+        meaningEn: queriedInChinese ? data.word : undefined,
+        isChinese: queriedInChinese,
         timestamp: Date.now(),
         lookupCount,
       };
@@ -125,7 +139,7 @@ export default function SearchPage() {
           .update({ lookup_count: newCount })
           .eq("id", existing.id);
         setVocabId(existing.id);
-        addToHistory(result, newCount);
+        addToHistory(target, result, newCount);
       } else {
         const { data: inserted } = await supabase
           .from("vocab_table")
@@ -138,7 +152,7 @@ export default function SearchPage() {
           .select("id")
           .single();
         setVocabId(inserted?.id || null);
-        addToHistory(result, 1);
+        addToHistory(target, result, 1);
       }
     } catch (e: any) {
       console.error(e);
@@ -169,7 +183,7 @@ export default function SearchPage() {
             <Search className="absolute left-4 h-5 w-5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="输入英文单词搜索..."
+              placeholder="输入进行搜索..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -215,13 +229,26 @@ export default function SearchPage() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.03 }}
                   onClick={() => { setQuery(item.word); handleSearch(item.word); }}
-                  className="w-full flex items-baseline gap-2 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
                 >
-                  <span className="text-sm font-semibold text-foreground truncate">{item.word}</span>
-                  {item.pos && (
-                    <span className="text-xs text-primary/70 font-medium shrink-0">{item.pos}</span>
+                  {item.isChinese ? (
+                    // Chinese query: show Chinese term + English result below
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-foreground">{item.word}</span>
+                      {item.meaningEn && (
+                        <span className="block text-xs text-muted-foreground mt-0.5">{item.meaningEn}</span>
+                      )}
+                    </div>
+                  ) : (
+                    // English query: original layout
+                    <>
+                      <span className="text-sm font-semibold text-foreground truncate">{item.word}</span>
+                      {item.pos && (
+                        <span className="text-xs text-primary/70 font-medium shrink-0">{item.pos}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground truncate flex-1">{item.meaningCn}</span>
+                    </>
                   )}
-                  <span className="text-xs text-muted-foreground truncate flex-1">{item.meaningCn}</span>
                   {item.lookupCount && item.lookupCount > 1 && (
                     <span className="text-[10px] text-muted-foreground/70 shrink-0 tabular-nums">已查 {item.lookupCount} 次</span>
                   )}
