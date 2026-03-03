@@ -97,6 +97,69 @@ export type Database = {
         }
         Relationships: []
       }
+      synonym_cluster_members: {
+        Row: {
+          cluster_id: string
+          created_at: string
+          id: string
+          user_id: string
+          vocab_id: string
+        }
+        Insert: {
+          cluster_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+          vocab_id: string
+        }
+        Update: {
+          cluster_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+          vocab_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "synonym_cluster_members_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "synonym_clusters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "synonym_cluster_members_vocab_id_fkey"
+            columns: ["vocab_id"]
+            isOneToOne: false
+            referencedRelation: "vocab_table"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      synonym_clusters: {
+        Row: {
+          cluster_name: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cluster_name?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cluster_name?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vocab_table: {
         Row: {
           chinese_definition: string

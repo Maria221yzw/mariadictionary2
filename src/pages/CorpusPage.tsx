@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2, Save } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2, Save, Link2, Sparkles, ArrowLeftRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CorpusWordModal from "@/components/CorpusWordModal";
 import ManualMaterialModal from "@/components/ManualMaterialModal";
+import SynonymComparisonDashboard from "@/components/SynonymComparisonDashboard";
 
 // ========== Tag Normalization System ==========
 const TAG_NORMALIZATION_MAP: Record<string, string> = {
@@ -290,6 +291,13 @@ export default function CorpusPage() {
   const [ecTags, setEcTags] = useState<string[]>([]);
   const [ecTagInput, setEcTagInput] = useState("");
   const [ecSaving, setEcSaving] = useState(false);
+  // Synonym cluster state
+  const [synSearch, setSynSearch] = useState("");
+  const [synLinked, setSynLinked] = useState<string[]>([]);
+  const [synLoading, setSynLoading] = useState(false);
+  const [synRecommendations, setSynRecommendations] = useState<{ fromLibrary: string[]; suggested: string[]; clusterName: string } | null>(null);
+  const [comparisonData, setComparisonData] = useState<any>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
   const navigate = useNavigate();
 
   const fetchAll = async () => {
@@ -547,6 +555,95 @@ export default function CorpusPage() {
   };
 
   const STANDARD_TAG_OPTIONS = CORPUS_CATEGORY_GROUPS.map(g => g.label);
+
+  // All vocab words for synonym search
+  const allVocabWords = useMemo(() => entries.map(e => e.vocab_table?.word).filter(Boolean) as string[], [entries]);
+
+  const vocabSearchResults = useMemo(() => {
+    if (!synSearch.trim()) return [];
+    const q = synSearch.toLowerCase();
+    return allVocabWords.filter(w => w.toLowerCase().includes(q) && !synLinked.includes(w) && w.toLowerCase() !== ecWord.toLowerCase()).slice(0, 8);
+  }, [synSearch, allVocabWords, synLinked, ecWord]);
+
+  const handleAIRecommend = async () => {
+    if (!ecWord.trim()) return;
+    setSynLoading(true);
+    setSynRecommendations(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("synonym-analyze", {
+        body: { action: "recommend", words: [ecWord.trim()], allWords: allVocabWords },
+      });
+      if (error) throw error;
+      setSynRecommendations(data);
+      // Auto-add fromLibrary results to linked
+      if (data?.fromLibrary) {
+        setSynLinked(prev => {
+          const next = [...prev];
+          data.fromLibrary.forEach((w: string) => { if (!next.includes(w)) next.push(w); });
+          return next;
+        });
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast.error("AI推荐失败");
+    } finally {
+      setSynLoading(false);
+    }
+  };
+
+  const handleSaveCluster = async () => {
+    if (synLinked.length === 0) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Create cluster
+      const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
+      const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
+        cluster_name: clusterName,
+        user_id: user.id,
+      }).select("id").single();
+      if (cErr || !cluster) throw cErr;
+
+      // Find vocab IDs for linked words + current word
+      const wordsToLink = [ecWord.toLowerCase(), ...synLinked.map(w => w.toLowerCase())];
+      const { data: vocabs } = await supabase.from("vocab_table").select("id, word").in("word", wordsToLink);
+      if (!vocabs || vocabs.length === 0) { toast.error("未找到匹配词汇"); return; }
+
+      const members = vocabs.map(v => ({
+        cluster_id: cluster.id,
+        vocab_id: v.id,
+        user_id: user.id,
+      }));
+
+      const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
+      if (mErr) throw mErr;
+
+      toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
+      setSynLinked([]);
+      setSynRecommendations(null);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("保存词簇失败");
+    }
+  };
+
+  const handleCompareCluster = async (words: string[]) => {
+    if (words.length < 2) { toast.error("至少需要2个词进行对比"); return; }
+    setComparisonLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("synonym-analyze", {
+        body: { action: "compare", words },
+      });
+      if (error) throw error;
+      setComparisonData(data);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("辨析加载失败");
+    } finally {
+      setComparisonLoading(false);
+    }
+  };
 
   const [normalizing, setNormalizing] = useState(false);
 
@@ -958,6 +1055,93 @@ export default function CorpusPage() {
                                     <button onClick={addEcTag} className="px-2 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-xs">+</button>
                                   </div>
                                 </div>
+                                {/* Synonym Linking */}
+                                <div className="border-t border-border pt-2.5">
+                                  <p className="text-[10px] font-semibold text-foreground mb-1.5 flex items-center gap-1">
+                                    <Link2 className="h-3 w-3 text-primary" />
+                                    添加近义/关联词
+                                  </p>
+                                  {/* Linked words */}
+                                  {synLinked.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                      {synLinked.map(w => (
+                                        <span key={w} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
+                                          {w}
+                                          <button onClick={() => setSynLinked(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* Search input */}
+                                  <div className="flex gap-1.5 mb-1.5">
+                                    <input
+                                      value={synSearch}
+                                      onChange={e => setSynSearch(e.target.value)}
+                                      placeholder="搜索库中已有单词..."
+                                      maxLength={50}
+                                      className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+                                    />
+                                    <button
+                                      onClick={handleAIRecommend}
+                                      disabled={synLoading}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                    >
+                                      {synLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                      AI发现
+                                    </button>
+                                  </div>
+                                  {/* Search results dropdown */}
+                                  {vocabSearchResults.length > 0 && (
+                                    <div className="bg-muted rounded-lg border mb-1.5 max-h-28 overflow-y-auto">
+                                      {vocabSearchResults.map(w => (
+                                        <button
+                                          key={w}
+                                          onClick={() => { setSynLinked(prev => [...prev, w]); setSynSearch(""); }}
+                                          className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
+                                        >
+                                          {w}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* AI recommendations */}
+                                  {synRecommendations?.suggested && synRecommendations.suggested.length > 0 && (
+                                    <div className="mb-1.5">
+                                      <p className="text-[10px] text-muted-foreground mb-1">AI推荐（不在库中）：</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {synRecommendations.suggested.map(w => (
+                                          <button
+                                            key={w}
+                                            onClick={() => setSynLinked(prev => prev.includes(w) ? prev : [...prev, w])}
+                                            className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] hover:bg-primary/10 hover:text-primary transition-colors"
+                                          >
+                                            + {w}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Save cluster + Compare */}
+                                  {synLinked.length > 0 && (
+                                    <div className="flex gap-1.5">
+                                      <button
+                                        onClick={handleSaveCluster}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
+                                      >
+                                        <Link2 className="h-3 w-3" />
+                                        保存词簇（{synLinked.length + 1}词）
+                                      </button>
+                                      <button
+                                        onClick={() => handleCompareCluster([ecWord, ...synLinked])}
+                                        disabled={comparisonLoading}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                      >
+                                        {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
+                                        微观辨析
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                                 {/* Save / Cancel */}
                                 <div className="flex gap-2 pt-1">
                                   <button onClick={() => saveEditCorpus(entry)} disabled={ecSaving}
@@ -965,7 +1149,7 @@ export default function CorpusPage() {
                                     {ecSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                                     保存
                                   </button>
-                                  <button onClick={cancelEditCorpus}
+                                  <button onClick={() => { cancelEditCorpus(); setSynLinked([]); setSynRecommendations(null); setSynSearch(""); }}
                                     className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground">
                                     取消
                                   </button>
@@ -1050,6 +1234,16 @@ export default function CorpusPage() {
           onSaved={fetchAll}
         />
       )}
+
+      {/* Synonym Comparison Dashboard */}
+      <AnimatePresence>
+        {comparisonData && (
+          <SynonymComparisonDashboard
+            data={comparisonData}
+            onClose={() => setComparisonData(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
