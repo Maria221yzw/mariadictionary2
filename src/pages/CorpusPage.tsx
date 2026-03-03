@@ -281,6 +281,15 @@ export default function CorpusPage() {
   const [editNotes, setEditNotes] = useState("");
   const [editSource, setEditSource] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  // Corpus inline editing state
+  const [editingCorpus, setEditingCorpus] = useState<string | null>(null);
+  const [ecWord, setEcWord] = useState("");
+  const [ecPhonetic, setEcPhonetic] = useState("");
+  const [ecDefinition, setEcDefinition] = useState("");
+  const [ecNotes, setEcNotes] = useState("");
+  const [ecTags, setEcTags] = useState<string[]>([]);
+  const [ecTagInput, setEcTagInput] = useState("");
+  const [ecSaving, setEcSaving] = useState(false);
   const navigate = useNavigate();
 
   const fetchAll = async () => {
@@ -462,6 +471,82 @@ export default function CorpusPage() {
     if (modalWord) setModalWord(prev => prev ? { ...prev, tags: newTags } : prev);
     toast.success("标签已更新");
   };
+
+  // Corpus inline editing helpers
+  const startEditCorpus = (entry: CorpusEntry) => {
+    setEditingCorpus(entry.id);
+    setEcWord(entry.vocab_table?.word || "");
+    setEcPhonetic(entry.vocab_table?.phonetic || "");
+    setEcDefinition(entry.vocab_table?.chinese_definition || "");
+    setEcNotes(entry.personal_notes || "");
+    setEcTags([...(entry.custom_tags || [])]);
+    setEcTagInput("");
+  };
+
+  const cancelEditCorpus = () => {
+    setEditingCorpus(null);
+    setEcWord(""); setEcPhonetic(""); setEcDefinition(""); setEcNotes("");
+    setEcTags([]); setEcTagInput("");
+  };
+
+  const addEcTag = () => {
+    const t = normalizeTag(ecTagInput.trim().replace(/^#/, ""));
+    if (!t || ecTags.includes(t)) { setEcTagInput(""); return; }
+    if (ecTags.length >= 20) { toast.error("最多20个标签"); return; }
+    setEcTags(prev => [...prev, t]);
+    setEcTagInput("");
+  };
+
+  const removeEcTag = (tag: string) => setEcTags(prev => prev.filter(t => t !== tag));
+
+  const saveEditCorpus = async (entry: CorpusEntry) => {
+    if (!ecWord.trim()) { toast.error("单词不能为空"); return; }
+    if (!ecDefinition.trim()) { toast.error("释义不能为空"); return; }
+    setEcSaving(true);
+    try {
+      // Update vocab_table
+      if (entry.vocab_table) {
+        const { error: vocabErr } = await supabase.from("vocab_table").update({
+          word: ecWord.trim().toLowerCase(),
+          phonetic: ecPhonetic.trim() || null,
+          chinese_definition: ecDefinition.trim(),
+        }).eq("id", entry.vocab_table.id);
+        if (vocabErr) throw vocabErr;
+      }
+      // Update corpus_entries
+      const normalizedTags = normalizeTags(ecTags);
+      const { error: corpusErr } = await supabase.from("corpus_entries").update({
+        personal_notes: ecNotes.trim() || null,
+        custom_tags: normalizedTags,
+      }).eq("id", entry.id);
+      if (corpusErr) throw corpusErr;
+
+      // Update local state
+      setEntries(prev => prev.map(e => {
+        if (e.id !== entry.id) return e;
+        return {
+          ...e,
+          personal_notes: ecNotes.trim() || null,
+          custom_tags: normalizedTags,
+          vocab_table: e.vocab_table ? {
+            ...e.vocab_table,
+            word: ecWord.trim().toLowerCase(),
+            phonetic: ecPhonetic.trim() || null,
+            chinese_definition: ecDefinition.trim(),
+          } : null,
+        };
+      }));
+      toast.success("已更新");
+      cancelEditCorpus();
+    } catch (e: any) {
+      console.error(e);
+      toast.error("更新失败");
+    } finally {
+      setEcSaving(false);
+    }
+  };
+
+  const STANDARD_TAG_OPTIONS = CORPUS_CATEGORY_GROUPS.map(g => g.label);
 
   const [normalizing, setNormalizing] = useState(false);
 
@@ -811,7 +896,9 @@ export default function CorpusPage() {
                       </motion.div>
                     );
                   })
-                : (filteredEntries as CorpusEntry[]).map(entry => (
+                : (filteredEntries as CorpusEntry[]).map(entry => {
+                    const isEditingThis = editingCorpus === entry.id;
+                    return (
                     <motion.div
                       key={`corpus-${entry.id}`}
                       layout
@@ -820,7 +907,7 @@ export default function CorpusPage() {
                       exit={{ opacity: 0, scale: 0.97 }}
                       className="bg-card rounded-xl shadow-warm overflow-hidden border border-border cursor-pointer hover:border-primary/30 hover:bg-muted/20 transition-all"
                       onClick={() => {
-                        if (entry.vocab_table) {
+                        if (!isEditingThis && entry.vocab_table) {
                           setModalWord({ word: entry.vocab_table.word, vocabId: entry.vocab_table.id, tags: entry.custom_tags || [] });
                         }
                       }}
@@ -828,37 +915,114 @@ export default function CorpusPage() {
                       <div className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-base font-semibold text-foreground">{entry.vocab_table?.word}</h3>
-                              {entry.vocab_table?.phonetic && (
-                                <span className="text-[10px] text-muted-foreground font-mono">{entry.vocab_table.phonetic}</span>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{entry.vocab_table?.chinese_definition}</p>
+                            {isEditingThis ? (
+                              <div className="space-y-2.5" onClick={e => e.stopPropagation()}>
+                                <div className="flex gap-2">
+                                  <input value={ecWord} onChange={e => setEcWord(e.target.value)} placeholder="单词" maxLength={100}
+                                    className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm font-semibold text-foreground outline-none border focus:ring-1 focus:ring-primary/20" />
+                                  <input value={ecPhonetic} onChange={e => setEcPhonetic(e.target.value)} placeholder="音标" maxLength={100}
+                                    className="w-28 bg-muted rounded-lg px-3 py-2 text-xs font-mono text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20" />
+                                </div>
+                                <input value={ecDefinition} onChange={e => setEcDefinition(e.target.value)} placeholder="中文释义" maxLength={500}
+                                  className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground outline-none border focus:ring-1 focus:ring-primary/20" />
+                                <textarea value={ecNotes} onChange={e => setEcNotes(e.target.value)} placeholder="例句笔记..." maxLength={2000} rows={2}
+                                  className="w-full bg-muted rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20 resize-none" />
+                                {/* Inline tag editing */}
+                                <div>
+                                  <div className="flex flex-wrap gap-1.5 mb-2">
+                                    {ecTags.map(tag => (
+                                      <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px]">
+                                        #{tag}
+                                        <button onClick={() => removeEcTag(tag)} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div className="flex gap-1.5">
+                                    <select
+                                      value=""
+                                      onChange={e => {
+                                        const v = e.target.value;
+                                        if (v && !ecTags.includes(v)) setEcTags(prev => [...prev, v]);
+                                      }}
+                                      className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+                                    >
+                                      <option value="">选择标签...</option>
+                                      {STANDARD_TAG_OPTIONS.filter(t => !ecTags.includes(t)).map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                      ))}
+                                    </select>
+                                    <input value={ecTagInput} onChange={e => setEcTagInput(e.target.value)}
+                                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addEcTag(); } }}
+                                      placeholder="自定义标签" maxLength={50}
+                                      className="w-28 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20" />
+                                    <button onClick={addEcTag} className="px-2 py-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground text-xs">+</button>
+                                  </div>
+                                </div>
+                                {/* Save / Cancel */}
+                                <div className="flex gap-2 pt-1">
+                                  <button onClick={() => saveEditCorpus(entry)} disabled={ecSaving}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50">
+                                    {ecSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                    保存
+                                  </button>
+                                  <button onClick={cancelEditCorpus}
+                                    className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground">
+                                    取消
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-base font-semibold text-foreground">{entry.vocab_table?.word}</h3>
+                                  {entry.vocab_table?.phonetic && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">{entry.vocab_table.phonetic}</span>
+                                  )}
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{entry.vocab_table?.chinese_definition}</p>
+                              </>
+                            )}
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteCorpus(entry.id); }}
-                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0 ml-1 p-1"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0 ml-1">
+                            {!isEditingThis && (
+                              <>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); startEditCorpus(entry); }}
+                                  className="p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                                  title="编辑"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCorpus(entry.id); }}
+                                  className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
 
-                        {entry.personal_notes && (
+                        {!isEditingThis && entry.personal_notes && (
                           <p className="text-xs text-foreground/70 mt-1.5 line-clamp-2">📝 {entry.personal_notes}</p>
                         )}
 
-                        {/* Scenario chip + tag editor */}
-                        <div className="flex items-center gap-1.5 mt-2">
-                          <span className="tag-chip text-[10px] shrink-0">{entry.application_scenario}</span>
-                        </div>
-                        <TagEditor
-                          tags={entry.custom_tags || []}
-                          onSave={(newTags) => handleSaveCorpusTags(entry.id, newTags)}
-                        />
+                        {!isEditingThis && (
+                          <>
+                            <div className="flex items-center gap-1.5 mt-2">
+                              <span className="tag-chip text-[10px] shrink-0">{entry.application_scenario}</span>
+                            </div>
+                            <TagEditor
+                              tags={entry.custom_tags || []}
+                              onSave={(newTags) => handleSaveCorpusTags(entry.id, newTags)}
+                            />
+                          </>
+                        )}
                       </div>
                     </motion.div>
-                  ))
+                    );
+                  })
               }
             </div>
           </AnimatePresence>
