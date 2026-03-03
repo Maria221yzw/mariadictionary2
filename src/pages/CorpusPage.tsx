@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2 } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -276,6 +276,11 @@ export default function CorpusPage() {
   const [modalWord, setModalWord] = useState<{ word: string; vocabId: string; tags?: string[] } | null>(null);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [expandedMaterial, setExpandedMaterial] = useState<Set<string>>(new Set());
+  const [editingMaterial, setEditingMaterial] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSource, setEditSource] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const navigate = useNavigate();
 
   const fetchAll = async () => {
@@ -406,6 +411,41 @@ export default function CorpusPage() {
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
+  };
+
+  const startEditMaterial = (mat: MaterialEntry) => {
+    setEditingMaterial(mat.id);
+    setEditContent(mat.content);
+    setEditNotes(mat.notes || "");
+    setEditSource(mat.source || "");
+  };
+
+  const cancelEditMaterial = () => {
+    setEditingMaterial(null);
+    setEditContent("");
+    setEditNotes("");
+    setEditSource("");
+  };
+
+  const saveEditMaterial = async (matId: string) => {
+    if (!editContent.trim()) { toast.error("内容不能为空"); return; }
+    setEditSaving(true);
+    try {
+      const { error } = await supabase.from("material_entries" as any).update({
+        content: editContent.trim().slice(0, 5000),
+        notes: editNotes.trim().slice(0, 2000),
+        source: editSource.trim().slice(0, 200),
+      }).eq("id", matId);
+      if (error) throw error;
+      setMaterials(prev => prev.map(m => m.id === matId ? { ...m, content: editContent.trim(), notes: editNotes.trim() || null, source: editSource.trim() || null } : m));
+      toast.success("素材已更新");
+      cancelEditMaterial();
+    } catch (e: any) {
+      console.error(e);
+      toast.error("更新失败");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleSaveMaterialTags = async (matId: string, newTags: string[]) => {
@@ -655,6 +695,7 @@ export default function CorpusPage() {
                 ? (filteredMaterials as MaterialEntry[]).map(mat => {
                     const isExpanded = expandedMaterial.has(mat.id);
                     const isLong = mat.content.length > 120;
+                    const isEditing = editingMaterial === mat.id;
                     return (
                       <motion.div
                         key={`mat-${mat.id}`}
@@ -669,38 +710,96 @@ export default function CorpusPage() {
                             <div className="flex items-center gap-1.5">
                               <FilePlus className="h-3.5 w-3.5 text-primary shrink-0" />
                               <span className="text-[10px] font-medium text-primary">私人语料</span>
-                              {mat.source && (
+                              {!isEditing && mat.source && (
                                 <span className="text-[10px] text-muted-foreground">· {mat.source}</span>
                               )}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                onClick={() => handleCopyMaterial(mat.content)}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                                title="复制语料"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteMaterial(mat.id)}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    onClick={() => saveEditMaterial(mat.id)}
+                                    disabled={editSaving}
+                                    className="p-1.5 rounded-lg text-primary hover:bg-primary/10 transition-colors"
+                                    title="保存"
+                                  >
+                                    {editSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                  </button>
+                                  <button
+                                    onClick={cancelEditMaterial}
+                                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                    title="取消"
+                                  >
+                                    <XIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => startEditMaterial(mat)}
+                                    className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                    title="编辑"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleCopyMaterial(mat.content)}
+                                    className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                    title="复制语料"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteMaterial(mat.id)}
+                                    className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
 
-                          <p className={`text-sm text-foreground leading-relaxed font-medium ${isLong && !isExpanded ? "line-clamp-2" : ""}`}>
-                            {mat.content}
-                          </p>
-                          {isLong && (
-                            <button onClick={() => toggleExpandMaterial(mat.id)} className="text-xs text-primary mt-1 hover:underline">
-                              {isExpanded ? "收起" : "展开全文"}
-                            </button>
-                          )}
-
-                          {mat.notes && (
-                            <p className="text-xs text-muted-foreground mt-2">📝 {mat.notes}</p>
+                          {isEditing ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                maxLength={5000}
+                                rows={4}
+                                className="w-full bg-muted rounded-xl px-3 py-2.5 text-sm text-foreground outline-none border focus:ring-2 focus:ring-primary/20 resize-none"
+                              />
+                              <input
+                                type="text"
+                                value={editSource}
+                                onChange={(e) => setEditSource(e.target.value)}
+                                placeholder="来源..."
+                                maxLength={200}
+                                className="w-full bg-muted rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+                              />
+                              <textarea
+                                value={editNotes}
+                                onChange={(e) => setEditNotes(e.target.value)}
+                                placeholder="笔记..."
+                                maxLength={2000}
+                                rows={2}
+                                className="w-full bg-muted rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20 resize-none"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <p className={`text-sm text-foreground leading-relaxed font-medium ${isLong && !isExpanded ? "line-clamp-2" : ""}`}>
+                                {mat.content}
+                              </p>
+                              {isLong && (
+                                <button onClick={() => toggleExpandMaterial(mat.id)} className="text-xs text-primary mt-1 hover:underline">
+                                  {isExpanded ? "收起" : "展开全文"}
+                                </button>
+                              )}
+                              {mat.notes && (
+                                <p className="text-xs text-muted-foreground mt-2">📝 {mat.notes}</p>
+                              )}
+                            </>
                           )}
 
                           {/* Tag editor */}
