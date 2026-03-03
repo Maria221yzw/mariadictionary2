@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { X, Loader2, FilePlus } from "lucide-react";
+import { useState, useRef } from "react";
+import { X, Loader2, FilePlus, Camera, ImageIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -20,12 +20,78 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
   const [category, setCategory] = useState("日常与通用");
   const [saving, setSaving] = useState(false);
 
+  // OCR state
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrWords, setOcrWords] = useState<string[]>([]);
+  const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, "");
     if (!t || tags.includes(t)) { setTagInput(""); return; }
     if (tags.length >= 20) { toast.error("最多20个标签"); return; }
     setTags(prev => [...prev, t]);
     setTagInput("");
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("请上传图片文件"); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error("图片不能超过10MB"); return; }
+
+    // Show preview
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setOcrWords([]);
+    setSelectedWords(new Set());
+
+    // Convert to base64
+    setOcrLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+
+      const { data, error } = await supabase.functions.invoke("ocr-extract", {
+        body: { imageBase64: base64, mimeType: file.type },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const fullText = data?.fullText || "";
+      const words = data?.words || [];
+
+      if (fullText) {
+        setContent(prev => prev ? prev + "\n" + fullText : fullText);
+        toast.success(`已识别 ${fullText.length} 个字符`);
+      } else {
+        toast.warning("未识别到文本内容");
+      }
+
+      if (words.length > 0) {
+        setOcrWords(words);
+      }
+    } catch (err: any) {
+      console.error("OCR error:", err);
+      toast.error("图片识别失败，请重试");
+    } finally {
+      setOcrLoading(false);
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const toggleWord = (w: string) => {
+    setSelectedWords(prev => {
+      const next = new Set(prev);
+      if (next.has(w)) next.delete(w); else next.add(w);
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -40,6 +106,10 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
       if (source.trim() && !allTags.includes(source.trim())) {
         allTags.push(source.trim());
       }
+      // Add selected OCR words as tags
+      selectedWords.forEach(w => {
+        if (!allTags.includes(w)) allTags.push(w);
+      });
 
       const { error } = await supabase.from("material_entries" as any).insert({
         user_id: user.id,
@@ -85,6 +155,76 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
         </div>
 
         <div className="p-4 space-y-4">
+          {/* OCR Upload */}
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={ocrLoading}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-primary/30 text-primary hover:bg-primary/5 hover:border-primary/50 transition-all disabled:opacity-50"
+            >
+              {ocrLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm font-medium">识别中...</span>
+                </>
+              ) : (
+                <>
+                  <Camera className="h-4 w-4" />
+                  <span className="text-sm font-medium">拍照/上传图片导入</span>
+                </>
+              )}
+            </button>
+
+            {/* Image preview */}
+            {previewUrl && (
+              <div className="mt-2 relative">
+                <img src={previewUrl} alt="OCR preview" className="w-full max-h-40 object-contain rounded-lg bg-muted" />
+                <button
+                  onClick={() => { setPreviewUrl(null); setOcrWords([]); setSelectedWords(new Set()); }}
+                  className="absolute top-1 right-1 p-1 rounded-full bg-foreground/60 text-background hover:bg-foreground/80"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {/* OCR word selection */}
+            {ocrWords.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[10px] text-muted-foreground mb-1.5">
+                  <ImageIcon className="h-3 w-3 inline mr-1" />
+                  点击选择目标词（将作为标签保存）
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ocrWords.map(w => {
+                    const sel = selectedWords.has(w);
+                    return (
+                      <button
+                        key={w}
+                        onClick={() => toggleWord(w)}
+                        className={`px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                          sel
+                            ? "bg-primary text-primary-foreground ring-1 ring-primary"
+                            : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        {w}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Content */}
           <div>
             <label className="text-sm font-medium text-foreground mb-1.5 block">
