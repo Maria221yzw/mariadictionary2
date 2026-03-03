@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.ocr-extract]
 verify_jwt = false
+
+[functions.synonym-analyze]
+verify_jwt = false
