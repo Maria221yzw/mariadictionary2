@@ -298,6 +298,8 @@ export default function CorpusPage() {
   const [synRecommendations, setSynRecommendations] = useState<{ fromLibrary: string[]; suggested: string[]; clusterName: string } | null>(null);
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+  // Cluster display: vocab_id -> array of related words (from same clusters)
+  const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string }[]>>({});
   const navigate = useNavigate();
 
   const fetchAll = async () => {
@@ -305,7 +307,7 @@ export default function CorpusPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
 
-    const [corpusRes, materialRes] = await Promise.all([
+    const [corpusRes, materialRes, membersRes] = await Promise.all([
       supabase
         .from("corpus_entries")
         .select("*, vocab_table(id, word, phonetic, chinese_definition, mastery_level)")
@@ -314,6 +316,9 @@ export default function CorpusPage() {
         .from("material_entries" as any)
         .select("*")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("synonym_cluster_members")
+        .select("cluster_id, vocab_id, vocab_table:vocab_id(id, word)") as any,
     ]);
 
     if (corpusRes.error) console.error(corpusRes.error);
@@ -321,10 +326,42 @@ export default function CorpusPage() {
 
     setEntries((corpusRes.data as any) || []);
     setMaterials((materialRes.data as any) || []);
+
+    // Build cluster map: for each vocab_id, find all other words in the same clusters
+    if (membersRes.data) {
+      const clusterGroups: Record<string, { vocabId: string; word: string }[]> = {};
+      for (const m of membersRes.data as any[]) {
+        const cid = m.cluster_id;
+        if (!clusterGroups[cid]) clusterGroups[cid] = [];
+        clusterGroups[cid].push({ vocabId: m.vocab_id, word: m.vocab_table?.word || "" });
+      }
+      const map: Record<string, { word: string; vocabId: string }[]> = {};
+      for (const members of Object.values(clusterGroups)) {
+        for (const member of members) {
+          if (!map[member.vocabId]) map[member.vocabId] = [];
+          for (const other of members) {
+            if (other.vocabId !== member.vocabId && !map[member.vocabId].some(x => x.vocabId === other.vocabId)) {
+              map[member.vocabId].push(other);
+            }
+          }
+        }
+      }
+      setClusterMap(map);
+    }
+
     setLoading(false);
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  const scrollToWord = (vocabId: string) => {
+    const el = document.getElementById(`corpus-card-${vocabId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary");
+      setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2000);
+    }
+  };
 
   // Sub-tags derived dynamically from data
   const materialSubTags = useMemo(() => {
@@ -622,6 +659,8 @@ export default function CorpusPage() {
       toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
       setSynLinked([]);
       setSynRecommendations(null);
+      // Refresh cluster map
+      fetchAll();
     } catch (e: any) {
       console.error(e);
       toast.error("保存词簇失败");
@@ -998,6 +1037,7 @@ export default function CorpusPage() {
                     return (
                     <motion.div
                       key={`corpus-${entry.id}`}
+                      id={`corpus-card-${entry.vocab_table?.id || entry.id}`}
                       layout
                       initial={{ opacity: 0, scale: 0.97 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -1194,6 +1234,41 @@ export default function CorpusPage() {
 
                         {!isEditingThis && (
                           <>
+                            {/* Related clusters capsules */}
+                            {entry.vocab_table && (() => {
+                              const related = clusterMap[entry.vocab_table.id] || [];
+                              return related.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
+                                  <Link2 className="h-3 w-3 text-primary/50 shrink-0" />
+                                  {related.map(r => (
+                                    <button
+                                      key={r.vocabId}
+                                      onClick={() => scrollToWord(r.vocabId)}
+                                      className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium hover:bg-blue-500/20 transition-colors"
+                                    >
+                                      {r.word}
+                                    </button>
+                                  ))}
+                                  <button
+                                    onClick={() => handleCompareCluster([entry.vocab_table!.word, ...related.map(r => r.word)])}
+                                    disabled={comparisonLoading}
+                                    className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                    title="AI 微观辨析"
+                                  >
+                                    {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : <ArrowLeftRight className="h-3 w-3 inline" />}
+                                    {" "}辨析
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); startEditCorpus(entry); }}
+                                  className="flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] text-muted-foreground/60 hover:text-primary hover:bg-primary/5 transition-colors"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  关联同类词
+                                </button>
+                              );
+                            })()}
                             <div className="flex items-center gap-1.5 mt-2">
                               <span className="tag-chip text-[10px] shrink-0">{entry.application_scenario}</span>
                             </div>
