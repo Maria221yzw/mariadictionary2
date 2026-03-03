@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { X, Loader2, FilePlus, Camera, ImageIcon } from "lucide-react";
+import { X, Loader2, FilePlus, Camera, ImageIcon, CheckCheck, BookPlus } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
   const [ocrWords, setOcrWords] = useState<string[]>([]);
   const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [addingToVocab, setAddingToVocab] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addTag = () => {
@@ -92,6 +93,54 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
       if (next.has(w)) next.delete(w); else next.add(w);
       return next;
     });
+  };
+
+  const toggleAllWords = () => {
+    if (selectedWords.size === ocrWords.length) {
+      setSelectedWords(new Set());
+    } else {
+      setSelectedWords(new Set(ocrWords));
+    }
+  };
+
+  const handleBatchAddToVocab = async () => {
+    if (selectedWords.size === 0) { toast.error("请先选择词汇"); return; }
+    setAddingToVocab(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error("请先登录"); return; }
+
+      const wordsToAdd = Array.from(selectedWords);
+      let added = 0, skipped = 0;
+
+      for (const word of wordsToAdd) {
+        const { data: existing } = await supabase
+          .from("vocab_table")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("word", word.toLowerCase())
+          .maybeSingle();
+
+        if (existing) { skipped++; continue; }
+
+        const { error } = await supabase.from("vocab_table").insert({
+          user_id: user.id,
+          word: word.toLowerCase(),
+          chinese_definition: "（待补充）",
+          mastery_level: 1,
+          lookup_count: 1,
+        });
+        if (!error) added++; else skipped++;
+      }
+
+      if (added > 0) toast.success(`已添加 ${added} 个词到词汇表${skipped > 0 ? `，${skipped} 个已存在` : ""}`);
+      else toast.info(`所选 ${skipped} 个词均已在词汇表中`);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("批量添加失败");
+    } finally {
+      setAddingToVocab(false);
+    }
   };
 
   const handleSave = async () => {
@@ -199,10 +248,18 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
             {/* OCR word selection */}
             {ocrWords.length > 0 && (
               <div className="mt-2">
-                <p className="text-[10px] text-muted-foreground mb-1.5">
-                  <ImageIcon className="h-3 w-3 inline mr-1" />
-                  点击选择目标词（将作为标签保存）
-                </p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">
+                    <ImageIcon className="h-3 w-3 inline mr-1" />
+                    点击选择目标词（{selectedWords.size}/{ocrWords.length}）
+                  </p>
+                  <button
+                    onClick={toggleAllWords}
+                    className="text-[10px] text-primary hover:underline font-medium"
+                  >
+                    {selectedWords.size === ocrWords.length ? "取消全选" : "全选"}
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {ocrWords.map(w => {
                     const sel = selectedWords.has(w);
@@ -221,6 +278,16 @@ export default function ManualMaterialModal({ onClose, onSaved }: Props) {
                     );
                   })}
                 </div>
+                {selectedWords.size > 0 && (
+                  <button
+                    onClick={handleBatchAddToVocab}
+                    disabled={addingToVocab}
+                    className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                  >
+                    {addingToVocab ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookPlus className="h-3 w-3" />}
+                    {addingToVocab ? "添加中..." : `一键添加 ${selectedWords.size} 词到词汇表`}
+                  </button>
+                )}
               </div>
             )}
           </div>
