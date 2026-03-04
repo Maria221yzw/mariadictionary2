@@ -1317,92 +1317,134 @@ export default function CorpusPage() {
                                       )}
                                     </div>
                                   )}
-                                  {/* Add new linked words */}
-                                  <p className="text-[10px] text-muted-foreground mb-1">添加近义/关联词：</p>
-                                  {/* Newly linked words (not yet saved) */}
-                                  {synLinked.length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {synLinked.map(w => (
-                                        <span key={w} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
-                                          {w}
-                                          <button onClick={() => setSynLinked(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Search input */}
-                                  <div className="flex gap-1.5 mb-1.5">
-                                    <input
-                                      value={synSearch}
-                                      onChange={e => setSynSearch(e.target.value)}
-                                      placeholder="搜索库中已有单词..."
-                                      maxLength={50}
-                                      className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
-                                    />
-                                    <button
-                                      onClick={handleAIRecommend}
-                                      disabled={synLoading}
-                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
-                                    >
-                                      {synLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                                      AI发现
-                                    </button>
-                                  </div>
-                                  {/* Search results dropdown */}
-                                  {vocabSearchResults.length > 0 && (
-                                    <div className="bg-muted rounded-lg border mb-1.5 max-h-28 overflow-y-auto">
-                                      {vocabSearchResults.map(w => (
-                                        <button
-                                          key={w}
-                                          onClick={() => {
-                                            if (synLinked.includes(w)) { toast.info(`${w} 已在待添加列表中`); return; }
-                                            setSynLinked(prev => [...prev, w]);
-                                            setSynSearch("");
-                                          }}
-                                          className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
-                                        >
-                                          {w}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* AI recommendations */}
-                                  {synRecommendations?.suggested && synRecommendations.suggested.length > 0 && (
-                                    <div className="mb-1.5">
-                                      <p className="text-[10px] text-muted-foreground mb-1">AI推荐（不在库中）：</p>
-                                      <div className="flex flex-wrap gap-1">
-                                        {synRecommendations.suggested.map(w => (
-                                          <button
-                                            key={w}
-                                            onClick={() => setSynLinked(prev => prev.includes(w) ? prev : [...prev, w])}
-                                            className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] hover:bg-primary/10 hover:text-primary transition-colors"
-                                          >
-                                            + {w}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {/* Save cluster + Compare */}
-                                  {synLinked.length > 0 && (
-                                    <div className="flex gap-1.5">
-                                      <button
-                                        onClick={handleSaveCluster}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
-                                      >
-                                        <Link2 className="h-3 w-3" />
-                                        {existingClusterId ? `添加到词簇（+${synLinked.length}词）` : `保存词簇（${synLinked.length + 1}词）`}
-                                      </button>
-                                      <button
-                                        onClick={() => handleCompareCluster([ecWord, ...synLinked, ...existingClusterMembers.map(m => m.word)])}
-                                        disabled={comparisonLoading}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
-                                      >
-                                        {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
-                                        微观辨析
-                                      </button>
-                                    </div>
-                                  )}
+                                   {/* Add new linked words */}
+                                   <p className="text-[10px] text-muted-foreground mb-1">添加近义/关联词：</p>
+                                   {/* Newly linked words (not yet saved) */}
+                                   {(synLinked.length > 0 || synCustomWords.length > 0) && (
+                                     <div className="flex flex-wrap gap-1.5 mb-2">
+                                       {synLinked.map(w => (
+                                         <span key={w} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
+                                           {w}
+                                           <button onClick={() => setSynLinked(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                         </span>
+                                       ))}
+                                       {synCustomWords.map(w => (
+                                         <span key={`custom-${w}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground text-[10px]">
+                                           {w}
+                                           <span className="text-[8px] opacity-60 ml-0.5">自定义</span>
+                                           <button onClick={() => setSynCustomWords(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                         </span>
+                                       ))}
+                                     </div>
+                                   )}
+                                   {/* Search input */}
+                                   <div className="flex gap-1.5 mb-1.5">
+                                     <input
+                                       value={synSearch}
+                                       onChange={e => setSynSearch(e.target.value)}
+                                       onKeyDown={e => {
+                                         if (e.key === "Enter" && synSearch.trim()) {
+                                           e.preventDefault();
+                                           const q = synSearch.trim().toLowerCase();
+                                           // Check if it's a library word
+                                           if (allVocabWords.some(w => w.toLowerCase() === q)) {
+                                             if (!synLinked.includes(synSearch.trim()) && synSearch.trim().toLowerCase() !== ecWord.toLowerCase()) {
+                                               setSynLinked(prev => [...prev, allVocabWords.find(w => w.toLowerCase() === q)!]);
+                                             }
+                                           } else {
+                                             // Add as custom word
+                                             if (!synCustomWords.includes(synSearch.trim()) && !synLinked.includes(synSearch.trim())) {
+                                               setSynCustomWords(prev => [...prev, synSearch.trim()]);
+                                             }
+                                           }
+                                           setSynSearch("");
+                                         }
+                                       }}
+                                       placeholder="搜索或输入任意单词..."
+                                       maxLength={50}
+                                       className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+                                     />
+                                     <button
+                                       onClick={handleAIRecommend}
+                                       disabled={synLoading}
+                                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                     >
+                                       {synLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                       AI发现
+                                     </button>
+                                   </div>
+                                   {/* Search results dropdown */}
+                                   {synSearch.trim() && (
+                                     <div className="bg-muted rounded-lg border mb-1.5 max-h-32 overflow-y-auto">
+                                       {vocabSearchResults.map(w => (
+                                         <button
+                                           key={w}
+                                           onClick={() => {
+                                             if (synLinked.includes(w)) { toast.info(`${w} 已在待添加列表中`); return; }
+                                             setSynLinked(prev => [...prev, w]);
+                                             setSynSearch("");
+                                           }}
+                                           className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
+                                         >
+                                           {w}
+                                         </button>
+                                       ))}
+                                       {/* Show "add custom word" option when no exact match found */}
+                                       {synSearch.trim() && !allVocabWords.some(w => w.toLowerCase() === synSearch.trim().toLowerCase()) && !synCustomWords.includes(synSearch.trim()) && (
+                                         <button
+                                           onClick={() => {
+                                             setSynCustomWords(prev => [...prev, synSearch.trim()]);
+                                             setSynSearch("");
+                                           }}
+                                           className="w-full text-left px-2.5 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors border-t border-border/50"
+                                         >
+                                           <Plus className="h-3 w-3 inline mr-1" />
+                                           添加自定义词：<span className="font-medium">{synSearch.trim()}</span>
+                                         </button>
+                                       )}
+                                     </div>
+                                   )}
+                                   {/* AI recommendations */}
+                                   {synRecommendations?.suggested && synRecommendations.suggested.length > 0 && (
+                                     <div className="mb-1.5">
+                                       <p className="text-[10px] text-muted-foreground mb-1">AI推荐（不在库中）：</p>
+                                       <div className="flex flex-wrap gap-1">
+                                         {synRecommendations.suggested.map(w => (
+                                           <button
+                                             key={w}
+                                             onClick={() => {
+                                               if (!synCustomWords.includes(w) && !synLinked.includes(w)) {
+                                                 setSynCustomWords(prev => [...prev, w]);
+                                               }
+                                             }}
+                                             className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] hover:bg-primary/10 hover:text-primary transition-colors"
+                                           >
+                                             + {w}
+                                           </button>
+                                         ))}
+                                       </div>
+                                     </div>
+                                   )}
+                                   {/* Save cluster + Compare */}
+                                   {(synLinked.length > 0 || synCustomWords.length > 0) && (
+                                     <div className="flex gap-1.5">
+                                       <button
+                                         onClick={handleSaveCluster}
+                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
+                                       >
+                                         <Link2 className="h-3 w-3" />
+                                         {existingClusterId ? `添加到词簇（+${synLinked.length + synCustomWords.length}词）` : `保存词簇（${synLinked.length + synCustomWords.length + 1}词）`}
+                                       </button>
+                                       <button
+                                         onClick={() => handleCompareCluster([ecWord, ...synLinked, ...synCustomWords, ...existingClusterMembers.map(m => m.word)])}
+                                         disabled={comparisonLoading}
+                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                       >
+                                         {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
+                                         微观辨析
+                                       </button>
+                                     </div>
+                                   )}
                                   {/* Compare button for existing members only */}
                                   {synLinked.length === 0 && existingClusterMembers.length > 0 && (
                                     <button
