@@ -566,6 +566,7 @@ export default function CorpusPage() {
     setEcTags([]); setEcTagInput("");
     setExistingClusterMembers([]); setExistingClusterId(null);
     setClusterNotes(""); setClusterNotesOriginal("");
+    setSynCustomWords([]);
   };
 
   const addEcTag = () => {
