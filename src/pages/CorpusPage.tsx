@@ -678,7 +678,8 @@ export default function CorpusPage() {
       // Find vocab IDs for linked words + current word
       const wordsToLink = [ecWord.toLowerCase(), ...synLinked.map(w => w.toLowerCase())];
       const { data: vocabs } = await supabase.from("vocab_table").select("id, word").in("word", wordsToLink);
-      if (!vocabs || vocabs.length === 0) { toast.error("未找到匹配词汇"); return; }
+      if ((!vocabs || vocabs.length === 0) && synCustomWords.length === 0) { toast.error("未找到匹配词汇"); return; }
+      const safeVocabs = vocabs || [];
 
       // Check if any of the new words already belong to other clusters
       const newVocabIds = vocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
