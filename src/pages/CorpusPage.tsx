@@ -324,7 +324,7 @@ export default function CorpusPage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("synonym_cluster_members")
-        .select("id, cluster_id, vocab_id, vocab_table:vocab_id(id, word)") as any,
+        .select("id, cluster_id, vocab_id, custom_word, vocab_table:vocab_id(id, word)") as any,
     ]);
 
     if (corpusRes.error) console.error(corpusRes.error);
