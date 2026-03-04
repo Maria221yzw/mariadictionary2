@@ -1520,15 +1520,32 @@ export default function CorpusPage() {
                               return related.length > 0 ? (
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
                                   <Link2 className="h-3 w-3 text-primary/50 shrink-0" />
-                                  {related.map(r => (
-                                    <button
-                                      key={r.vocabId}
-                                      onClick={() => scrollToWord(r.vocabId)}
-                                      className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-medium hover:bg-accent/80 transition-colors"
-                                    >
-                                      {r.word}
-                                    </button>
-                                  ))}
+                                  {related.map(r => {
+                                    const key = r.isCustom ? `custom-${r.word}` : r.vocabId!;
+                                    return r.isCustom ? (
+                                      <button
+                                        key={key}
+                                        onClick={() => {
+                                          if (window.confirm(`是否将「${r.word}」正式录入语料库？`)) {
+                                            navigate(`/?prefill=${encodeURIComponent(r.word)}&clusterId=${r.clusterId}&memberId=${r.memberId}`);
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground text-[10px] font-medium hover:border-primary hover:text-primary transition-colors"
+                                        title="自定义词 · 点击转为正式词条"
+                                      >
+                                        {r.word}
+                                        <ArrowUpRight className="h-2.5 w-2.5 inline ml-0.5 opacity-50" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        key={key}
+                                        onClick={() => scrollToWord(r.vocabId!)}
+                                        className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-medium hover:bg-accent/80 transition-colors"
+                                      >
+                                        {r.word}
+                                      </button>
+                                    );
+                                  })}
                                   <button
                                     onClick={() => handleCompareCluster([entry.vocab_table!.word, ...related.map(r => r.word)])}
                                     disabled={comparisonLoading}
