@@ -670,7 +670,7 @@ export default function CorpusPage() {
   };
 
   const handleSaveCluster = async () => {
-    if (synLinked.length === 0) return;
+    if (synLinked.length === 0 && synCustomWords.length === 0) return;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
