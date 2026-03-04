@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2, Save, Link2, Sparkles, ArrowLeftRight } from "lucide-react";
+import { Library, Search, Trash2, Loader2, Plus, Copy, FilePlus, BookOpen, Pencil, Check, X as XIcon, Merge, Wand2, Save, Link2, Sparkles, ArrowLeftRight, ArrowUpRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -294,14 +294,15 @@ export default function CorpusPage() {
   // Synonym cluster state
   const [synSearch, setSynSearch] = useState("");
   const [synLinked, setSynLinked] = useState<string[]>([]);
+  const [synCustomWords, setSynCustomWords] = useState<string[]>([]); // custom (non-library) words to add
   const [synLoading, setSynLoading] = useState(false);
   const [synRecommendations, setSynRecommendations] = useState<{ fromLibrary: string[]; suggested: string[]; clusterName: string } | null>(null);
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   // Cluster display: vocab_id -> array of related words (from same clusters)
-  const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string; clusterId: string; memberId: string }[]>>({});
+  const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]>>({});
   // Existing cluster members for the word being edited (loaded from DB)
-  const [existingClusterMembers, setExistingClusterMembers] = useState<{ word: string; vocabId: string; clusterId: string; memberId: string }[]>([]);
+  const [existingClusterMembers, setExistingClusterMembers] = useState<{ word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]>([]);
   const [existingClusterId, setExistingClusterId] = useState<string | null>(null);
   const [clusterNotes, setClusterNotes] = useState("");
   const [clusterNotesOriginal, setClusterNotesOriginal] = useState("");
@@ -323,7 +324,7 @@ export default function CorpusPage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("synonym_cluster_members")
-        .select("id, cluster_id, vocab_id, vocab_table:vocab_id(id, word)") as any,
+        .select("id, cluster_id, vocab_id, custom_word, vocab_table:vocab_id(id, word)") as any,
     ]);
 
     if (corpusRes.error) console.error(corpusRes.error);
@@ -334,19 +335,25 @@ export default function CorpusPage() {
 
     // Build cluster map: for each vocab_id, find all other words in the same clusters
     if (membersRes.data) {
-      const clusterGroups: Record<string, { vocabId: string; word: string; memberId: string }[]> = {};
+      const clusterGroups: Record<string, { vocabId: string | null; word: string; memberId: string; isCustom: boolean }[]> = {};
       for (const m of membersRes.data as any[]) {
         const cid = m.cluster_id;
         if (!clusterGroups[cid]) clusterGroups[cid] = [];
-        clusterGroups[cid].push({ vocabId: m.vocab_id, word: m.vocab_table?.word || "", memberId: m.id });
+        const isCustom = !m.vocab_id;
+        const word = isCustom ? (m.custom_word || "") : (m.vocab_table?.word || "");
+        clusterGroups[cid].push({ vocabId: m.vocab_id || null, word, memberId: m.id, isCustom });
       }
-      const map: Record<string, { word: string; vocabId: string; clusterId: string; memberId: string }[]> = {};
+      const map: Record<string, { word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]> = {};
       for (const [clusterId, members] of Object.entries(clusterGroups)) {
         for (const member of members) {
+          if (!member.vocabId) continue; // custom words don't have their own card to show relations on
           if (!map[member.vocabId]) map[member.vocabId] = [];
           for (const other of members) {
-            if (other.vocabId !== member.vocabId && !map[member.vocabId].some(x => x.vocabId === other.vocabId)) {
-              map[member.vocabId].push({ ...other, clusterId });
+            const otherKey = other.vocabId || `custom:${other.word}`;
+            if ((other.vocabId && other.vocabId !== member.vocabId) || other.isCustom) {
+              if (!map[member.vocabId].some(x => (x.vocabId && x.vocabId === other.vocabId) || (x.isCustom && x.word === other.word))) {
+                map[member.vocabId].push({ ...other, clusterId });
+              }
             }
           }
         }
@@ -532,7 +539,7 @@ export default function CorpusPage() {
     setEcTags([...(entry.custom_tags || [])]);
     setEcTagInput("");
     setSynLinked([]);
-    setSynRecommendations(null);
+    setSynCustomWords([]);
     setSynSearch("");
     // Load existing cluster members for this word
     const vocabId = entry.vocab_table?.id;
@@ -559,6 +566,7 @@ export default function CorpusPage() {
     setEcTags([]); setEcTagInput("");
     setExistingClusterMembers([]); setExistingClusterId(null);
     setClusterNotes(""); setClusterNotesOriginal("");
+    setSynCustomWords([]);
   };
 
   const addEcTag = () => {
@@ -662,7 +670,7 @@ export default function CorpusPage() {
   };
 
   const handleSaveCluster = async () => {
-    if (synLinked.length === 0) return;
+    if (synLinked.length === 0 && synCustomWords.length === 0) return;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -670,10 +678,21 @@ export default function CorpusPage() {
       // Find vocab IDs for linked words + current word
       const wordsToLink = [ecWord.toLowerCase(), ...synLinked.map(w => w.toLowerCase())];
       const { data: vocabs } = await supabase.from("vocab_table").select("id, word").in("word", wordsToLink);
-      if (!vocabs || vocabs.length === 0) { toast.error("未找到匹配词汇"); return; }
+      if ((!vocabs || vocabs.length === 0) && synCustomWords.length === 0) { toast.error("未找到匹配词汇"); return; }
+      const safeVocabs = vocabs || [];
+
+      // Helper to insert custom word members into a cluster
+      const insertCustomMembers = async (clusterId: string) => {
+        if (synCustomWords.length === 0) return 0;
+        const customMembers = synCustomWords.map(w => ({
+          cluster_id: clusterId, custom_word: w, user_id: user.id, vocab_id: null,
+        }));
+        await supabase.from("synonym_cluster_members").insert(customMembers as any);
+        return customMembers.length;
+      };
 
       // Check if any of the new words already belong to other clusters
-      const newVocabIds = vocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
+      const newVocabIds = safeVocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
       let existingOtherClusters: { clusterId: string; clusterName: string; vocabIds: string[] }[] = [];
       if (newVocabIds.length > 0) {
         const { data: existingMembers } = await supabase
@@ -681,7 +700,6 @@ export default function CorpusPage() {
           .select("cluster_id, vocab_id")
           .in("vocab_id", newVocabIds);
         if (existingMembers && existingMembers.length > 0) {
-          // Group by cluster_id, exclude the current cluster
           const otherClusters: Record<string, string[]> = {};
           for (const m of existingMembers) {
             if (m.cluster_id !== existingClusterId) {
@@ -690,7 +708,6 @@ export default function CorpusPage() {
             }
           }
           if (Object.keys(otherClusters).length > 0) {
-            // Fetch cluster names
             const clusterIds = Object.keys(otherClusters);
             const { data: clusters } = await supabase.from("synonym_clusters").select("id, cluster_name").in("id", clusterIds);
             existingOtherClusters = clusterIds.map(cid => ({
@@ -702,7 +719,6 @@ export default function CorpusPage() {
         }
       }
 
-      // If there are conflicting clusters, ask to merge
       if (existingOtherClusters.length > 0) {
         const clusterNames = existingOtherClusters.map(c => `「${c.clusterName}」`).join("、");
         const confirmed = window.confirm(
@@ -710,72 +726,70 @@ export default function CorpusPage() {
         );
         if (!confirmed) return;
 
-        // Merge: move all members from other clusters to current/new cluster
         if (existingClusterId) {
-          // Move members from other clusters to current cluster
           for (const oc of existingOtherClusters) {
             await supabase.from("synonym_cluster_members").update({ cluster_id: existingClusterId } as any).eq("cluster_id", oc.clusterId);
             await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
           }
-          // Add any new words not yet in the cluster
           const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
           const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
-            cluster_id: existingClusterId,
-            vocab_id: v.id,
-            user_id: user.id,
+          const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+            cluster_id: existingClusterId, vocab_id: v.id, user_id: user.id,
           }));
           if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
-          toast.success(`已合并词簇，共包含 ${(currentMembers?.length || 0) + newMembers.length} 个词`);
+          const customCount = await insertCustomMembers(existingClusterId);
+          toast.success(`已合并词簇，共包含 ${(currentMembers?.length || 0) + newMembers.length + customCount} 个词`);
         } else {
-          // Create new cluster, absorb all
           const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
           const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
             cluster_name: clusterName, user_id: user.id,
           }).select("id").single();
           if (cErr || !cluster) throw cErr;
-
-          // Move members from other clusters
           for (const oc of existingOtherClusters) {
             await supabase.from("synonym_cluster_members").update({ cluster_id: cluster.id } as any).eq("cluster_id", oc.clusterId);
             await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
           }
-          // Add all vocabs
           const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", cluster.id);
           const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+          const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
             cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
           }));
           if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
+          const customCount = await insertCustomMembers(cluster.id);
           toast.success(`已创建并合并词簇「${clusterName}」`);
         }
       } else if (existingClusterId) {
-        // Add to existing cluster
         const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
         const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-        const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+        const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
           cluster_id: existingClusterId, vocab_id: v.id, user_id: user.id,
         }));
-        if (newMembers.length === 0) { toast.info("这些词已在当前词簇中"); return; }
-        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(newMembers);
-        if (mErr) throw mErr;
-        toast.success(`已添加 ${newMembers.length} 个词到词簇`);
+        if (newMembers.length === 0 && synCustomWords.length === 0) { toast.info("这些词已在当前词簇中"); return; }
+        if (newMembers.length > 0) {
+          const { error: mErr } = await supabase.from("synonym_cluster_members").insert(newMembers);
+          if (mErr) throw mErr;
+        }
+        const customCount = await insertCustomMembers(existingClusterId);
+        toast.success(`已添加 ${newMembers.length + customCount} 个词到词簇`);
       } else {
-        // Create new cluster
         const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
         const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
           cluster_name: clusterName, user_id: user.id,
         }).select("id").single();
         if (cErr || !cluster) throw cErr;
-        const members = vocabs.map(v => ({
+        const members = safeVocabs.map(v => ({
           cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
         }));
-        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
-        if (mErr) throw mErr;
-        toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
+        if (members.length > 0) {
+          const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
+          if (mErr) throw mErr;
+        }
+        const customCount = await insertCustomMembers(cluster.id);
+        toast.success(`已创建词簇「${clusterName}」，包含 ${members.length + customCount} 个词`);
       }
 
       setSynLinked([]);
+      setSynCustomWords([]);
       setSynRecommendations(null);
       fetchAll();
     } catch (e: any) {
@@ -785,7 +799,7 @@ export default function CorpusPage() {
   };
 
   // Remove a member from a cluster (bidirectional)
-  const handleRemoveClusterMember = async (memberId: string, vocabId: string) => {
+  const handleRemoveClusterMember = async (memberId: string, vocabId: string | null) => {
     try {
       // Delete the member row
       const { error } = await supabase.from("synonym_cluster_members").delete().eq("id", memberId);
@@ -1266,8 +1280,13 @@ export default function CorpusPage() {
                                       <p className="text-[10px] text-muted-foreground mb-1">当前词族成员：</p>
                                       <div className="flex flex-wrap gap-1.5">
                                         {existingClusterMembers.map(m => (
-                                          <span key={m.memberId} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                                          <span key={m.memberId} className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                            m.isCustom
+                                              ? "border border-dashed border-muted-foreground/40 text-muted-foreground"
+                                              : "bg-primary/10 text-primary"
+                                          }`}>
                                             {m.word}
+                                            {m.isCustom && <span className="text-[8px] opacity-60 ml-0.5">自定义</span>}
                                             <button
                                               onClick={() => handleRemoveClusterMember(m.memberId, m.vocabId)}
                                               className="hover:opacity-70 ml-0.5"
@@ -1303,94 +1322,136 @@ export default function CorpusPage() {
                                       )}
                                     </div>
                                   )}
-                                  {/* Add new linked words */}
-                                  <p className="text-[10px] text-muted-foreground mb-1">添加近义/关联词：</p>
-                                  {/* Newly linked words (not yet saved) */}
-                                  {synLinked.length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {synLinked.map(w => (
-                                        <span key={w} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
-                                          {w}
-                                          <button onClick={() => setSynLinked(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Search input */}
-                                  <div className="flex gap-1.5 mb-1.5">
-                                    <input
-                                      value={synSearch}
-                                      onChange={e => setSynSearch(e.target.value)}
-                                      placeholder="搜索库中已有单词..."
-                                      maxLength={50}
-                                      className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
-                                    />
-                                    <button
-                                      onClick={handleAIRecommend}
-                                      disabled={synLoading}
-                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
-                                    >
-                                      {synLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                                      AI发现
-                                    </button>
-                                  </div>
-                                  {/* Search results dropdown */}
-                                  {vocabSearchResults.length > 0 && (
-                                    <div className="bg-muted rounded-lg border mb-1.5 max-h-28 overflow-y-auto">
-                                      {vocabSearchResults.map(w => (
-                                        <button
-                                          key={w}
-                                          onClick={() => {
-                                            if (synLinked.includes(w)) { toast.info(`${w} 已在待添加列表中`); return; }
-                                            setSynLinked(prev => [...prev, w]);
-                                            setSynSearch("");
-                                          }}
-                                          className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
-                                        >
-                                          {w}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* AI recommendations */}
-                                  {synRecommendations?.suggested && synRecommendations.suggested.length > 0 && (
-                                    <div className="mb-1.5">
-                                      <p className="text-[10px] text-muted-foreground mb-1">AI推荐（不在库中）：</p>
-                                      <div className="flex flex-wrap gap-1">
-                                        {synRecommendations.suggested.map(w => (
-                                          <button
-                                            key={w}
-                                            onClick={() => setSynLinked(prev => prev.includes(w) ? prev : [...prev, w])}
-                                            className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] hover:bg-primary/10 hover:text-primary transition-colors"
-                                          >
-                                            + {w}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {/* Save cluster + Compare */}
-                                  {synLinked.length > 0 && (
-                                    <div className="flex gap-1.5">
-                                      <button
-                                        onClick={handleSaveCluster}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
-                                      >
-                                        <Link2 className="h-3 w-3" />
-                                        {existingClusterId ? `添加到词簇（+${synLinked.length}词）` : `保存词簇（${synLinked.length + 1}词）`}
-                                      </button>
-                                      <button
-                                        onClick={() => handleCompareCluster([ecWord, ...synLinked, ...existingClusterMembers.map(m => m.word)])}
-                                        disabled={comparisonLoading}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
-                                      >
-                                        {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
-                                        微观辨析
-                                      </button>
-                                    </div>
-                                  )}
+                                   {/* Add new linked words */}
+                                   <p className="text-[10px] text-muted-foreground mb-1">添加近义/关联词：</p>
+                                   {/* Newly linked words (not yet saved) */}
+                                   {(synLinked.length > 0 || synCustomWords.length > 0) && (
+                                     <div className="flex flex-wrap gap-1.5 mb-2">
+                                       {synLinked.map(w => (
+                                         <span key={w} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
+                                           {w}
+                                           <button onClick={() => setSynLinked(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                         </span>
+                                       ))}
+                                       {synCustomWords.map(w => (
+                                         <span key={`custom-${w}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground text-[10px]">
+                                           {w}
+                                           <span className="text-[8px] opacity-60 ml-0.5">自定义</span>
+                                           <button onClick={() => setSynCustomWords(prev => prev.filter(x => x !== w))} className="hover:opacity-70 ml-0.5"><XIcon className="h-2.5 w-2.5" /></button>
+                                         </span>
+                                       ))}
+                                     </div>
+                                   )}
+                                   {/* Search input */}
+                                   <div className="flex gap-1.5 mb-1.5">
+                                     <input
+                                       value={synSearch}
+                                       onChange={e => setSynSearch(e.target.value)}
+                                       onKeyDown={e => {
+                                         if (e.key === "Enter" && synSearch.trim()) {
+                                           e.preventDefault();
+                                           const q = synSearch.trim().toLowerCase();
+                                           // Check if it's a library word
+                                           if (allVocabWords.some(w => w.toLowerCase() === q)) {
+                                             if (!synLinked.includes(synSearch.trim()) && synSearch.trim().toLowerCase() !== ecWord.toLowerCase()) {
+                                               setSynLinked(prev => [...prev, allVocabWords.find(w => w.toLowerCase() === q)!]);
+                                             }
+                                           } else {
+                                             // Add as custom word
+                                             if (!synCustomWords.includes(synSearch.trim()) && !synLinked.includes(synSearch.trim())) {
+                                               setSynCustomWords(prev => [...prev, synSearch.trim()]);
+                                             }
+                                           }
+                                           setSynSearch("");
+                                         }
+                                       }}
+                                       placeholder="搜索或输入任意单词..."
+                                       maxLength={50}
+                                       className="flex-1 bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20"
+                                     />
+                                     <button
+                                       onClick={handleAIRecommend}
+                                       disabled={synLoading}
+                                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                     >
+                                       {synLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                       AI发现
+                                     </button>
+                                   </div>
+                                   {/* Search results dropdown */}
+                                   {synSearch.trim() && (
+                                     <div className="bg-muted rounded-lg border mb-1.5 max-h-32 overflow-y-auto">
+                                       {vocabSearchResults.map(w => (
+                                         <button
+                                           key={w}
+                                           onClick={() => {
+                                             if (synLinked.includes(w)) { toast.info(`${w} 已在待添加列表中`); return; }
+                                             setSynLinked(prev => [...prev, w]);
+                                             setSynSearch("");
+                                           }}
+                                           className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
+                                         >
+                                           {w}
+                                         </button>
+                                       ))}
+                                       {/* Show "add custom word" option when no exact match found */}
+                                       {synSearch.trim() && !allVocabWords.some(w => w.toLowerCase() === synSearch.trim().toLowerCase()) && !synCustomWords.includes(synSearch.trim()) && (
+                                         <button
+                                           onClick={() => {
+                                             setSynCustomWords(prev => [...prev, synSearch.trim()]);
+                                             setSynSearch("");
+                                           }}
+                                           className="w-full text-left px-2.5 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors border-t border-border/50"
+                                         >
+                                           <Plus className="h-3 w-3 inline mr-1" />
+                                           添加自定义词：<span className="font-medium">{synSearch.trim()}</span>
+                                         </button>
+                                       )}
+                                     </div>
+                                   )}
+                                   {/* AI recommendations */}
+                                   {synRecommendations?.suggested && synRecommendations.suggested.length > 0 && (
+                                     <div className="mb-1.5">
+                                       <p className="text-[10px] text-muted-foreground mb-1">AI推荐（不在库中）：</p>
+                                       <div className="flex flex-wrap gap-1">
+                                         {synRecommendations.suggested.map(w => (
+                                           <button
+                                             key={w}
+                                             onClick={() => {
+                                               if (!synCustomWords.includes(w) && !synLinked.includes(w)) {
+                                                 setSynCustomWords(prev => [...prev, w]);
+                                               }
+                                             }}
+                                             className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] hover:bg-primary/10 hover:text-primary transition-colors"
+                                           >
+                                             + {w}
+                                           </button>
+                                         ))}
+                                       </div>
+                                     </div>
+                                   )}
+                                   {/* Save cluster + Compare */}
+                                   {(synLinked.length > 0 || synCustomWords.length > 0) && (
+                                     <div className="flex gap-1.5">
+                                       <button
+                                         onClick={handleSaveCluster}
+                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
+                                       >
+                                         <Link2 className="h-3 w-3" />
+                                         {existingClusterId ? `添加到词簇（+${synLinked.length + synCustomWords.length}词）` : `保存词簇（${synLinked.length + synCustomWords.length + 1}词）`}
+                                       </button>
+                                       <button
+                                         onClick={() => handleCompareCluster([ecWord, ...synLinked, ...synCustomWords, ...existingClusterMembers.map(m => m.word)])}
+                                         disabled={comparisonLoading}
+                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                       >
+                                         {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
+                                         微观辨析
+                                       </button>
+                                     </div>
+                                   )}
                                   {/* Compare button for existing members only */}
-                                  {synLinked.length === 0 && existingClusterMembers.length > 0 && (
+                                  {synLinked.length === 0 && synCustomWords.length === 0 && existingClusterMembers.length > 0 && (
                                     <button
                                       onClick={() => handleCompareCluster([ecWord, ...existingClusterMembers.map(m => m.word)])}
                                       disabled={comparisonLoading}
@@ -1459,15 +1520,32 @@ export default function CorpusPage() {
                               return related.length > 0 ? (
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
                                   <Link2 className="h-3 w-3 text-primary/50 shrink-0" />
-                                  {related.map(r => (
-                                    <button
-                                      key={r.vocabId}
-                                      onClick={() => scrollToWord(r.vocabId)}
-                                      className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-medium hover:bg-accent/80 transition-colors"
-                                    >
-                                      {r.word}
-                                    </button>
-                                  ))}
+                                  {related.map(r => {
+                                    const key = r.isCustom ? `custom-${r.word}` : r.vocabId!;
+                                    return r.isCustom ? (
+                                      <button
+                                        key={key}
+                                        onClick={() => {
+                                          if (window.confirm(`是否将「${r.word}」正式录入语料库？`)) {
+                                            navigate(`/?prefill=${encodeURIComponent(r.word)}&clusterId=${r.clusterId}&memberId=${r.memberId}`);
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground text-[10px] font-medium hover:border-primary hover:text-primary transition-colors"
+                                        title="自定义词 · 点击转为正式词条"
+                                      >
+                                        {r.word}
+                                        <ArrowUpRight className="h-2.5 w-2.5 inline ml-0.5 opacity-50" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        key={key}
+                                        onClick={() => scrollToWord(r.vocabId!)}
+                                        className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-medium hover:bg-accent/80 transition-colors"
+                                      >
+                                        {r.word}
+                                      </button>
+                                    );
+                                  })}
                                   <button
                                     onClick={() => handleCompareCluster([entry.vocab_table!.word, ...related.map(r => r.word)])}
                                     disabled={comparisonLoading}

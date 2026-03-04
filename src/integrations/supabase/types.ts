@@ -101,23 +101,26 @@ export type Database = {
         Row: {
           cluster_id: string
           created_at: string
+          custom_word: string | null
           id: string
           user_id: string
-          vocab_id: string
+          vocab_id: string | null
         }
         Insert: {
           cluster_id: string
           created_at?: string
+          custom_word?: string | null
           id?: string
           user_id: string
-          vocab_id: string
+          vocab_id?: string | null
         }
         Update: {
           cluster_id?: string
           created_at?: string
+          custom_word?: string | null
           id?: string
           user_id?: string
-          vocab_id?: string
+          vocab_id?: string | null
         }
         Relationships: [
           {
