@@ -1451,7 +1451,7 @@ export default function CorpusPage() {
                                      </div>
                                    )}
                                   {/* Compare button for existing members only */}
-                                  {synLinked.length === 0 && existingClusterMembers.length > 0 && (
+                                  {synLinked.length === 0 && synCustomWords.length === 0 && existingClusterMembers.length > 0 && (
                                     <button
                                       onClick={() => handleCompareCluster([ecWord, ...existingClusterMembers.map(m => m.word)])}
                                       disabled={comparisonLoading}
