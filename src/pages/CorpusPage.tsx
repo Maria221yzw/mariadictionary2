@@ -539,7 +539,7 @@ export default function CorpusPage() {
     setEcTags([...(entry.custom_tags || [])]);
     setEcTagInput("");
     setSynLinked([]);
-    setSynRecommendations(null);
+    setSynCustomWords([]);
     setSynSearch("");
     // Load existing cluster members for this word
     const vocabId = entry.vocab_table?.id;
