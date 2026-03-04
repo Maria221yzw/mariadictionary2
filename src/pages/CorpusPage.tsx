@@ -335,19 +335,25 @@ export default function CorpusPage() {
 
     // Build cluster map: for each vocab_id, find all other words in the same clusters
     if (membersRes.data) {
-      const clusterGroups: Record<string, { vocabId: string; word: string; memberId: string }[]> = {};
+      const clusterGroups: Record<string, { vocabId: string | null; word: string; memberId: string; isCustom: boolean }[]> = {};
       for (const m of membersRes.data as any[]) {
         const cid = m.cluster_id;
         if (!clusterGroups[cid]) clusterGroups[cid] = [];
-        clusterGroups[cid].push({ vocabId: m.vocab_id, word: m.vocab_table?.word || "", memberId: m.id });
+        const isCustom = !m.vocab_id;
+        const word = isCustom ? (m.custom_word || "") : (m.vocab_table?.word || "");
+        clusterGroups[cid].push({ vocabId: m.vocab_id || null, word, memberId: m.id, isCustom });
       }
-      const map: Record<string, { word: string; vocabId: string; clusterId: string; memberId: string }[]> = {};
+      const map: Record<string, { word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]> = {};
       for (const [clusterId, members] of Object.entries(clusterGroups)) {
         for (const member of members) {
+          if (!member.vocabId) continue; // custom words don't have their own card to show relations on
           if (!map[member.vocabId]) map[member.vocabId] = [];
           for (const other of members) {
-            if (other.vocabId !== member.vocabId && !map[member.vocabId].some(x => x.vocabId === other.vocabId)) {
-              map[member.vocabId].push({ ...other, clusterId });
+            const otherKey = other.vocabId || `custom:${other.word}`;
+            if ((other.vocabId && other.vocabId !== member.vocabId) || other.isCustom) {
+              if (!map[member.vocabId].some(x => (x.vocabId && x.vocabId === other.vocabId) || (x.isCustom && x.word === other.word))) {
+                map[member.vocabId].push({ ...other, clusterId });
+              }
             }
           }
         }
