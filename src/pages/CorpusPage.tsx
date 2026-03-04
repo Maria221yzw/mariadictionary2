@@ -681,8 +681,18 @@ export default function CorpusPage() {
       if ((!vocabs || vocabs.length === 0) && synCustomWords.length === 0) { toast.error("未找到匹配词汇"); return; }
       const safeVocabs = vocabs || [];
 
+      // Helper to insert custom word members into a cluster
+      const insertCustomMembers = async (clusterId: string) => {
+        if (synCustomWords.length === 0) return 0;
+        const customMembers = synCustomWords.map(w => ({
+          cluster_id: clusterId, custom_word: w, user_id: user.id, vocab_id: null,
+        }));
+        await supabase.from("synonym_cluster_members").insert(customMembers as any);
+        return customMembers.length;
+      };
+
       // Check if any of the new words already belong to other clusters
-      const newVocabIds = vocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
+      const newVocabIds = safeVocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
       let existingOtherClusters: { clusterId: string; clusterName: string; vocabIds: string[] }[] = [];
       if (newVocabIds.length > 0) {
         const { data: existingMembers } = await supabase
@@ -690,7 +700,6 @@ export default function CorpusPage() {
           .select("cluster_id, vocab_id")
           .in("vocab_id", newVocabIds);
         if (existingMembers && existingMembers.length > 0) {
-          // Group by cluster_id, exclude the current cluster
           const otherClusters: Record<string, string[]> = {};
           for (const m of existingMembers) {
             if (m.cluster_id !== existingClusterId) {
@@ -699,7 +708,6 @@ export default function CorpusPage() {
             }
           }
           if (Object.keys(otherClusters).length > 0) {
-            // Fetch cluster names
             const clusterIds = Object.keys(otherClusters);
             const { data: clusters } = await supabase.from("synonym_clusters").select("id, cluster_name").in("id", clusterIds);
             existingOtherClusters = clusterIds.map(cid => ({
@@ -711,7 +719,6 @@ export default function CorpusPage() {
         }
       }
 
-      // If there are conflicting clusters, ask to merge
       if (existingOtherClusters.length > 0) {
         const clusterNames = existingOtherClusters.map(c => `「${c.clusterName}」`).join("、");
         const confirmed = window.confirm(
@@ -719,72 +726,70 @@ export default function CorpusPage() {
         );
         if (!confirmed) return;
 
-        // Merge: move all members from other clusters to current/new cluster
         if (existingClusterId) {
-          // Move members from other clusters to current cluster
           for (const oc of existingOtherClusters) {
             await supabase.from("synonym_cluster_members").update({ cluster_id: existingClusterId } as any).eq("cluster_id", oc.clusterId);
             await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
           }
-          // Add any new words not yet in the cluster
           const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
           const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
-            cluster_id: existingClusterId,
-            vocab_id: v.id,
-            user_id: user.id,
+          const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+            cluster_id: existingClusterId, vocab_id: v.id, user_id: user.id,
           }));
           if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
-          toast.success(`已合并词簇，共包含 ${(currentMembers?.length || 0) + newMembers.length} 个词`);
+          const customCount = await insertCustomMembers(existingClusterId);
+          toast.success(`已合并词簇，共包含 ${(currentMembers?.length || 0) + newMembers.length + customCount} 个词`);
         } else {
-          // Create new cluster, absorb all
           const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
           const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
             cluster_name: clusterName, user_id: user.id,
           }).select("id").single();
           if (cErr || !cluster) throw cErr;
-
-          // Move members from other clusters
           for (const oc of existingOtherClusters) {
             await supabase.from("synonym_cluster_members").update({ cluster_id: cluster.id } as any).eq("cluster_id", oc.clusterId);
             await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
           }
-          // Add all vocabs
           const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", cluster.id);
           const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+          const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
             cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
           }));
           if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
+          const customCount = await insertCustomMembers(cluster.id);
           toast.success(`已创建并合并词簇「${clusterName}」`);
         }
       } else if (existingClusterId) {
-        // Add to existing cluster
         const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
         const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
-        const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+        const newMembers = safeVocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
           cluster_id: existingClusterId, vocab_id: v.id, user_id: user.id,
         }));
-        if (newMembers.length === 0) { toast.info("这些词已在当前词簇中"); return; }
-        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(newMembers);
-        if (mErr) throw mErr;
-        toast.success(`已添加 ${newMembers.length} 个词到词簇`);
+        if (newMembers.length === 0 && synCustomWords.length === 0) { toast.info("这些词已在当前词簇中"); return; }
+        if (newMembers.length > 0) {
+          const { error: mErr } = await supabase.from("synonym_cluster_members").insert(newMembers);
+          if (mErr) throw mErr;
+        }
+        const customCount = await insertCustomMembers(existingClusterId);
+        toast.success(`已添加 ${newMembers.length + customCount} 个词到词簇`);
       } else {
-        // Create new cluster
         const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
         const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
           cluster_name: clusterName, user_id: user.id,
         }).select("id").single();
         if (cErr || !cluster) throw cErr;
-        const members = vocabs.map(v => ({
+        const members = safeVocabs.map(v => ({
           cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
         }));
-        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
-        if (mErr) throw mErr;
-        toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
+        if (members.length > 0) {
+          const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
+          if (mErr) throw mErr;
+        }
+        const customCount = await insertCustomMembers(cluster.id);
+        toast.success(`已创建词簇「${clusterName}」，包含 ${members.length + customCount} 个词`);
       }
 
       setSynLinked([]);
+      setSynCustomWords([]);
       setSynRecommendations(null);
       fetchAll();
     } catch (e: any) {
