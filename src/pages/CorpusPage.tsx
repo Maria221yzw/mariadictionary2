@@ -799,7 +799,7 @@ export default function CorpusPage() {
   };
 
   // Remove a member from a cluster (bidirectional)
-  const handleRemoveClusterMember = async (memberId: string, vocabId: string) => {
+  const handleRemoveClusterMember = async (memberId: string, vocabId: string | null) => {
     try {
       // Delete the member row
       const { error } = await supabase.from("synonym_cluster_members").delete().eq("id", memberId);
