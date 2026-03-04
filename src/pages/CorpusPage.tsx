@@ -299,7 +299,12 @@ export default function CorpusPage() {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   // Cluster display: vocab_id -> array of related words (from same clusters)
-  const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string }[]>>({});
+  const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string; clusterId: string; memberId: string }[]>>({});
+  // Existing cluster members for the word being edited (loaded from DB)
+  const [existingClusterMembers, setExistingClusterMembers] = useState<{ word: string; vocabId: string; clusterId: string; memberId: string }[]>([]);
+  const [existingClusterId, setExistingClusterId] = useState<string | null>(null);
+  const [clusterNotes, setClusterNotes] = useState("");
+  const [clusterNotesOriginal, setClusterNotesOriginal] = useState("");
   const navigate = useNavigate();
 
   const fetchAll = async () => {
@@ -318,7 +323,7 @@ export default function CorpusPage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("synonym_cluster_members")
-        .select("cluster_id, vocab_id, vocab_table:vocab_id(id, word)") as any,
+        .select("id, cluster_id, vocab_id, vocab_table:vocab_id(id, word)") as any,
     ]);
 
     if (corpusRes.error) console.error(corpusRes.error);
@@ -329,19 +334,19 @@ export default function CorpusPage() {
 
     // Build cluster map: for each vocab_id, find all other words in the same clusters
     if (membersRes.data) {
-      const clusterGroups: Record<string, { vocabId: string; word: string }[]> = {};
+      const clusterGroups: Record<string, { vocabId: string; word: string; memberId: string }[]> = {};
       for (const m of membersRes.data as any[]) {
         const cid = m.cluster_id;
         if (!clusterGroups[cid]) clusterGroups[cid] = [];
-        clusterGroups[cid].push({ vocabId: m.vocab_id, word: m.vocab_table?.word || "" });
+        clusterGroups[cid].push({ vocabId: m.vocab_id, word: m.vocab_table?.word || "", memberId: m.id });
       }
-      const map: Record<string, { word: string; vocabId: string }[]> = {};
-      for (const members of Object.values(clusterGroups)) {
+      const map: Record<string, { word: string; vocabId: string; clusterId: string; memberId: string }[]> = {};
+      for (const [clusterId, members] of Object.entries(clusterGroups)) {
         for (const member of members) {
           if (!map[member.vocabId]) map[member.vocabId] = [];
           for (const other of members) {
             if (other.vocabId !== member.vocabId && !map[member.vocabId].some(x => x.vocabId === other.vocabId)) {
-              map[member.vocabId].push(other);
+              map[member.vocabId].push({ ...other, clusterId });
             }
           }
         }
@@ -526,12 +531,34 @@ export default function CorpusPage() {
     setEcNotes(entry.personal_notes || "");
     setEcTags([...(entry.custom_tags || [])]);
     setEcTagInput("");
+    setSynLinked([]);
+    setSynRecommendations(null);
+    setSynSearch("");
+    // Load existing cluster members for this word
+    const vocabId = entry.vocab_table?.id;
+    if (vocabId && clusterMap[vocabId]?.length > 0) {
+      const members = clusterMap[vocabId];
+      setExistingClusterMembers(members);
+      setExistingClusterId(members[0].clusterId);
+      // Load cluster notes
+      supabase.from("synonym_clusters").select("notes").eq("id", members[0].clusterId).single().then(({ data }) => {
+        setClusterNotes((data as any)?.notes || "");
+        setClusterNotesOriginal((data as any)?.notes || "");
+      });
+    } else {
+      setExistingClusterMembers([]);
+      setExistingClusterId(null);
+      setClusterNotes("");
+      setClusterNotesOriginal("");
+    }
   };
 
   const cancelEditCorpus = () => {
     setEditingCorpus(null);
     setEcWord(""); setEcPhonetic(""); setEcDefinition(""); setEcNotes("");
     setEcTags([]); setEcTagInput("");
+    setExistingClusterMembers([]); setExistingClusterId(null);
+    setClusterNotes(""); setClusterNotesOriginal("");
   };
 
   const addEcTag = () => {
@@ -599,8 +626,14 @@ export default function CorpusPage() {
   const vocabSearchResults = useMemo(() => {
     if (!synSearch.trim()) return [];
     const q = synSearch.toLowerCase();
-    return allVocabWords.filter(w => w.toLowerCase().includes(q) && !synLinked.includes(w) && w.toLowerCase() !== ecWord.toLowerCase()).slice(0, 8);
-  }, [synSearch, allVocabWords, synLinked, ecWord]);
+    const existingWords = existingClusterMembers.map(m => m.word.toLowerCase());
+    return allVocabWords.filter(w =>
+      w.toLowerCase().includes(q) &&
+      !synLinked.includes(w) &&
+      w.toLowerCase() !== ecWord.toLowerCase() &&
+      !existingWords.includes(w.toLowerCase())
+    ).slice(0, 8);
+  }, [synSearch, allVocabWords, synLinked, ecWord, existingClusterMembers]);
 
   const handleAIRecommend = async () => {
     if (!ecWord.trim()) return;
@@ -634,36 +667,162 @@ export default function CorpusPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Create cluster
-      const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
-      const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
-        cluster_name: clusterName,
-        user_id: user.id,
-      }).select("id").single();
-      if (cErr || !cluster) throw cErr;
-
       // Find vocab IDs for linked words + current word
       const wordsToLink = [ecWord.toLowerCase(), ...synLinked.map(w => w.toLowerCase())];
       const { data: vocabs } = await supabase.from("vocab_table").select("id, word").in("word", wordsToLink);
       if (!vocabs || vocabs.length === 0) { toast.error("未找到匹配词汇"); return; }
 
-      const members = vocabs.map(v => ({
-        cluster_id: cluster.id,
-        vocab_id: v.id,
-        user_id: user.id,
-      }));
+      // Check if any of the new words already belong to other clusters
+      const newVocabIds = vocabs.filter(v => v.word !== ecWord.toLowerCase()).map(v => v.id);
+      let existingOtherClusters: { clusterId: string; clusterName: string; vocabIds: string[] }[] = [];
+      if (newVocabIds.length > 0) {
+        const { data: existingMembers } = await supabase
+          .from("synonym_cluster_members")
+          .select("cluster_id, vocab_id")
+          .in("vocab_id", newVocabIds);
+        if (existingMembers && existingMembers.length > 0) {
+          // Group by cluster_id, exclude the current cluster
+          const otherClusters: Record<string, string[]> = {};
+          for (const m of existingMembers) {
+            if (m.cluster_id !== existingClusterId) {
+              if (!otherClusters[m.cluster_id]) otherClusters[m.cluster_id] = [];
+              otherClusters[m.cluster_id].push(m.vocab_id);
+            }
+          }
+          if (Object.keys(otherClusters).length > 0) {
+            // Fetch cluster names
+            const clusterIds = Object.keys(otherClusters);
+            const { data: clusters } = await supabase.from("synonym_clusters").select("id, cluster_name").in("id", clusterIds);
+            existingOtherClusters = clusterIds.map(cid => ({
+              clusterId: cid,
+              clusterName: clusters?.find(c => c.id === cid)?.cluster_name || "未命名",
+              vocabIds: otherClusters[cid],
+            }));
+          }
+        }
+      }
 
-      const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
-      if (mErr) throw mErr;
+      // If there are conflicting clusters, ask to merge
+      if (existingOtherClusters.length > 0) {
+        const clusterNames = existingOtherClusters.map(c => `「${c.clusterName}」`).join("、");
+        const confirmed = window.confirm(
+          `部分单词已属于其他词簇 ${clusterNames}。\n是否将它们合并为一个大的记忆簇？`
+        );
+        if (!confirmed) return;
 
-      toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
+        // Merge: move all members from other clusters to current/new cluster
+        if (existingClusterId) {
+          // Move members from other clusters to current cluster
+          for (const oc of existingOtherClusters) {
+            await supabase.from("synonym_cluster_members").update({ cluster_id: existingClusterId } as any).eq("cluster_id", oc.clusterId);
+            await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
+          }
+          // Add any new words not yet in the cluster
+          const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
+          const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
+          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+            cluster_id: existingClusterId,
+            vocab_id: v.id,
+            user_id: user.id,
+          }));
+          if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
+          toast.success(`已合并词簇，共包含 ${(currentMembers?.length || 0) + newMembers.length} 个词`);
+        } else {
+          // Create new cluster, absorb all
+          const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
+          const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
+            cluster_name: clusterName, user_id: user.id,
+          }).select("id").single();
+          if (cErr || !cluster) throw cErr;
+
+          // Move members from other clusters
+          for (const oc of existingOtherClusters) {
+            await supabase.from("synonym_cluster_members").update({ cluster_id: cluster.id } as any).eq("cluster_id", oc.clusterId);
+            await supabase.from("synonym_clusters").delete().eq("id", oc.clusterId);
+          }
+          // Add all vocabs
+          const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", cluster.id);
+          const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
+          const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+            cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
+          }));
+          if (newMembers.length > 0) await supabase.from("synonym_cluster_members").insert(newMembers);
+          toast.success(`已创建并合并词簇「${clusterName}」`);
+        }
+      } else if (existingClusterId) {
+        // Add to existing cluster
+        const { data: currentMembers } = await supabase.from("synonym_cluster_members").select("vocab_id").eq("cluster_id", existingClusterId);
+        const existingVocabIds = new Set((currentMembers || []).map(m => m.vocab_id));
+        const newMembers = vocabs.filter(v => !existingVocabIds.has(v.id)).map(v => ({
+          cluster_id: existingClusterId, vocab_id: v.id, user_id: user.id,
+        }));
+        if (newMembers.length === 0) { toast.info("这些词已在当前词簇中"); return; }
+        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(newMembers);
+        if (mErr) throw mErr;
+        toast.success(`已添加 ${newMembers.length} 个词到词簇`);
+      } else {
+        // Create new cluster
+        const clusterName = synRecommendations?.clusterName || `${ecWord} 同义词组`;
+        const { data: cluster, error: cErr } = await supabase.from("synonym_clusters").insert({
+          cluster_name: clusterName, user_id: user.id,
+        }).select("id").single();
+        if (cErr || !cluster) throw cErr;
+        const members = vocabs.map(v => ({
+          cluster_id: cluster.id, vocab_id: v.id, user_id: user.id,
+        }));
+        const { error: mErr } = await supabase.from("synonym_cluster_members").insert(members);
+        if (mErr) throw mErr;
+        toast.success(`已创建词簇「${clusterName}」，包含 ${members.length} 个词`);
+      }
+
       setSynLinked([]);
       setSynRecommendations(null);
-      // Refresh cluster map
       fetchAll();
     } catch (e: any) {
       console.error(e);
       toast.error("保存词簇失败");
+    }
+  };
+
+  // Remove a member from a cluster (bidirectional)
+  const handleRemoveClusterMember = async (memberId: string, vocabId: string) => {
+    try {
+      // Delete the member row
+      const { error } = await supabase.from("synonym_cluster_members").delete().eq("id", memberId);
+      if (error) throw error;
+      // Update local state
+      setExistingClusterMembers(prev => prev.filter(m => m.memberId !== memberId));
+      // Check if only 1 member left in cluster - if so, delete the cluster entirely
+      if (existingClusterId) {
+        const { data: remaining } = await supabase.from("synonym_cluster_members").select("id").eq("cluster_id", existingClusterId);
+        if (remaining && remaining.length <= 1) {
+          // Delete remaining member and cluster
+          await supabase.from("synonym_cluster_members").delete().eq("cluster_id", existingClusterId);
+          await supabase.from("synonym_clusters").delete().eq("id", existingClusterId);
+          setExistingClusterId(null);
+          setExistingClusterMembers([]);
+          toast.success("词簇已解散（成员不足）");
+        } else {
+          toast.success("已从词簇中移除");
+        }
+      }
+      fetchAll();
+    } catch (e: any) {
+      console.error(e);
+      toast.error("移除失败");
+    }
+  };
+
+  // Save cluster notes
+  const handleSaveClusterNotes = async () => {
+    if (!existingClusterId || clusterNotes === clusterNotesOriginal) return;
+    try {
+      const { error } = await supabase.from("synonym_clusters").update({ notes: clusterNotes.trim() || null }).eq("id", existingClusterId);
+      if (error) throw error;
+      setClusterNotesOriginal(clusterNotes);
+      toast.success("辨析笔记已保存");
+    } catch (e: any) {
+      toast.error("保存笔记失败");
     }
   };
 
@@ -1099,9 +1258,54 @@ export default function CorpusPage() {
                                 <div className="border-t border-border pt-2.5">
                                   <p className="text-[10px] font-semibold text-foreground mb-1.5 flex items-center gap-1">
                                     <Link2 className="h-3 w-3 text-primary" />
-                                    添加近义/关联词
+                                    词族管理
                                   </p>
-                                  {/* Linked words */}
+                                  {/* Current cluster members (removable) */}
+                                  {existingClusterMembers.length > 0 && (
+                                    <div className="mb-2.5">
+                                      <p className="text-[10px] text-muted-foreground mb-1">当前词族成员：</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {existingClusterMembers.map(m => (
+                                          <span key={m.memberId} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                                            {m.word}
+                                            <button
+                                              onClick={() => handleRemoveClusterMember(m.memberId, m.vocabId)}
+                                              className="hover:opacity-70 ml-0.5"
+                                              title={`从词簇中移除 ${m.word}`}
+                                            >
+                                              <XIcon className="h-2.5 w-2.5" />
+                                            </button>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Cluster notes */}
+                                  {existingClusterId && (
+                                    <div className="mb-2.5">
+                                      <p className="text-[10px] text-muted-foreground mb-1">辨析笔记：</p>
+                                      <textarea
+                                        value={clusterNotes}
+                                        onChange={e => setClusterNotes(e.target.value)}
+                                        placeholder="记录你的对比心得，如：vanish 多用于文学描写，decrease 更多用于学术图表描述..."
+                                        maxLength={2000}
+                                        rows={3}
+                                        className="w-full bg-muted rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none border focus:ring-1 focus:ring-primary/20 resize-none"
+                                      />
+                                      {clusterNotes !== clusterNotesOriginal && (
+                                        <button
+                                          onClick={handleSaveClusterNotes}
+                                          className="mt-1 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-colors"
+                                        >
+                                          <Save className="h-3 w-3" />
+                                          保存笔记
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Add new linked words */}
+                                  <p className="text-[10px] text-muted-foreground mb-1">添加近义/关联词：</p>
+                                  {/* Newly linked words (not yet saved) */}
                                   {synLinked.length > 0 && (
                                     <div className="flex flex-wrap gap-1.5 mb-2">
                                       {synLinked.map(w => (
@@ -1136,7 +1340,11 @@ export default function CorpusPage() {
                                       {vocabSearchResults.map(w => (
                                         <button
                                           key={w}
-                                          onClick={() => { setSynLinked(prev => [...prev, w]); setSynSearch(""); }}
+                                          onClick={() => {
+                                            if (synLinked.includes(w)) { toast.info(`${w} 已在待添加列表中`); return; }
+                                            setSynLinked(prev => [...prev, w]);
+                                            setSynSearch("");
+                                          }}
                                           className="w-full text-left px-2.5 py-1.5 text-xs text-foreground hover:bg-primary/10 transition-colors"
                                         >
                                           {w}
@@ -1169,10 +1377,10 @@ export default function CorpusPage() {
                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition-opacity"
                                       >
                                         <Link2 className="h-3 w-3" />
-                                        保存词簇（{synLinked.length + 1}词）
+                                        {existingClusterId ? `添加到词簇（+${synLinked.length}词）` : `保存词簇（${synLinked.length + 1}词）`}
                                       </button>
                                       <button
-                                        onClick={() => handleCompareCluster([ecWord, ...synLinked])}
+                                        onClick={() => handleCompareCluster([ecWord, ...synLinked, ...existingClusterMembers.map(m => m.word)])}
                                         disabled={comparisonLoading}
                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
                                       >
@@ -1180,6 +1388,17 @@ export default function CorpusPage() {
                                         微观辨析
                                       </button>
                                     </div>
+                                  )}
+                                  {/* Compare button for existing members only */}
+                                  {synLinked.length === 0 && existingClusterMembers.length > 0 && (
+                                    <button
+                                      onClick={() => handleCompareCluster([ecWord, ...existingClusterMembers.map(m => m.word)])}
+                                      disabled={comparisonLoading}
+                                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                    >
+                                      {comparisonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowLeftRight className="h-3 w-3" />}
+                                      AI 生成深度辨析
+                                    </button>
                                   )}
                                 </div>
                                 {/* Save / Cancel */}
@@ -1189,7 +1408,7 @@ export default function CorpusPage() {
                                     {ecSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                                     保存
                                   </button>
-                                  <button onClick={() => { cancelEditCorpus(); setSynLinked([]); setSynRecommendations(null); setSynSearch(""); }}
+                                  <button onClick={cancelEditCorpus}
                                     className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs hover:text-foreground">
                                     取消
                                   </button>
@@ -1244,7 +1463,7 @@ export default function CorpusPage() {
                                     <button
                                       key={r.vocabId}
                                       onClick={() => scrollToWord(r.vocabId)}
-                                      className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium hover:bg-blue-500/20 transition-colors"
+                                      className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[10px] font-medium hover:bg-accent/80 transition-colors"
                                     >
                                       {r.word}
                                     </button>

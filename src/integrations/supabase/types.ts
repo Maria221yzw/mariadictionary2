@@ -141,6 +141,7 @@ export type Database = {
           cluster_name: string
           created_at: string
           id: string
+          notes: string | null
           updated_at: string
           user_id: string
         }
@@ -148,6 +149,7 @@ export type Database = {
           cluster_name?: string
           created_at?: string
           id?: string
+          notes?: string | null
           updated_at?: string
           user_id: string
         }
@@ -155,6 +157,7 @@ export type Database = {
           cluster_name?: string
           created_at?: string
           id?: string
+          notes?: string | null
           updated_at?: string
           user_id?: string
         }
