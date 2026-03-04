@@ -1280,8 +1280,13 @@ export default function CorpusPage() {
                                       <p className="text-[10px] text-muted-foreground mb-1">当前词族成员：</p>
                                       <div className="flex flex-wrap gap-1.5">
                                         {existingClusterMembers.map(m => (
-                                          <span key={m.memberId} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                                          <span key={m.memberId} className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                            m.isCustom
+                                              ? "border border-dashed border-muted-foreground/40 text-muted-foreground"
+                                              : "bg-primary/10 text-primary"
+                                          }`}>
                                             {m.word}
+                                            {m.isCustom && <span className="text-[8px] opacity-60 ml-0.5">自定义</span>}
                                             <button
                                               onClick={() => handleRemoveClusterMember(m.memberId, m.vocabId)}
                                               className="hover:opacity-70 ml-0.5"
