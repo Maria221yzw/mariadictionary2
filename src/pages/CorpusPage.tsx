@@ -302,7 +302,7 @@ export default function CorpusPage() {
   // Cluster display: vocab_id -> array of related words (from same clusters)
   const [clusterMap, setClusterMap] = useState<Record<string, { word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]>>({});
   // Existing cluster members for the word being edited (loaded from DB)
-  const [existingClusterMembers, setExistingClusterMembers] = useState<{ word: string; vocabId: string; clusterId: string; memberId: string }[]>([]);
+  const [existingClusterMembers, setExistingClusterMembers] = useState<{ word: string; vocabId: string | null; clusterId: string; memberId: string; isCustom: boolean }[]>([]);
   const [existingClusterId, setExistingClusterId] = useState<string | null>(null);
   const [clusterNotes, setClusterNotes] = useState("");
   const [clusterNotesOriginal, setClusterNotesOriginal] = useState("");
