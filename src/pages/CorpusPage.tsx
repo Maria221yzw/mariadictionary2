@@ -294,6 +294,7 @@ export default function CorpusPage() {
   // Synonym cluster state
   const [synSearch, setSynSearch] = useState("");
   const [synLinked, setSynLinked] = useState<string[]>([]);
+  const [synCustomWords, setSynCustomWords] = useState<string[]>([]); // custom (non-library) words to add
   const [synLoading, setSynLoading] = useState(false);
   const [synRecommendations, setSynRecommendations] = useState<{ fromLibrary: string[]; suggested: string[]; clusterName: string } | null>(null);
   const [comparisonData, setComparisonData] = useState<any>(null);
